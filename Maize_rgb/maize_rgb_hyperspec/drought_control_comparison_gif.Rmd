@@ -1,0 +1,253 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+```{r}
+# load Libraries
+library("tidyverse")
+library("hrbrthemes")
+library("viridis")
+library("ggplot2")
+library("ggThemeAssist")
+library("broom")
+library("ggfortify")
+library("ggforce")
+library("magrittr")
+library("car")
+library("animation")
+```
+
+```{r}
+# read in data
+corn_data_full <-read.delim("/Users/propst/Desktop/h8-h13_full.txt")
+#summary(corn_data)
+#str(corn_data)
+corn_data_full$treatment <- gsub('["9"]', 'heat', corn_data_full$treatment)
+corn_data_full$treatment <-  gsub('heat-drought', "heatdrought", corn_data_full$treatment)
+corn_data_full$genotype <- gsub('ki11', "Ki11", corn_data_full$genotype)
+corn_data_full$genotype <- gsub('OH43','oh43', corn_data_full$genotype)
+                           
+
+
+# Filter out inaccurate data from df
+corn_data_full <- corn_data_full%>%
+  filter(width < 2500,
+         height < 3000,
+         genotype != "PH207",
+         genotype != "KY21",
+         genotype != "B84",
+         treatment!= "heat",
+         treatment!= "heatdrought")
+  
+#corn_data_summary <- corn_data_full%>%
+#summary()
+```
+
+```{r}
+cds <- corn_data_full %>%
+  group_by(treatment)%>%
+  summarise(.groups = "keep",mean_height = mean(height),
+            mean_width = mean(width))
+cds
+
+corn_data_drought<-corn_data_full%>%
+  group_by(treatment)
+
+# Building a sample distribution of treated plants
+boot_drought_corn <- replicate(n = 1000, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+head(boot_drought_corn)
+
+# plotting distribution of treated plants.
+h <- ggplot(boot_drought_corn, aes(x = boot_mean_height, fill = treatment))+
+         geom_histogram(bins = 100)
+
+summarise(boot_drought_corn, standard.error = sd(boot_mean_height))
+
+sample_estimate_drought <-  corn_data_drought %>%
+  summarise(mean_height = mean(height))### Summarize the data (let's summarize the mean )
+sample_estimate_drought
+
+boot_drought_CI <- boot_drought_corn %>% 
+  summarise(CI         = c("lower 95", 'upper 95'), # add a column to note which CIs we're calcualting
+            mean_height = quantile(boot_mean_height ,probs = c(.025,.975)))  # boundaries separating the middle 95% from the rest of our bootstrap replicates. 
+boot_heat_CI
+
+h +geom_vline(xintercept = sample_estimate_drought$mean_height, lty = 2)+
+  #geom_vline(xintercept = sample_estimate_control$mean_height, lty = 2)+
+  geom_vline(xintercept = pull(boot_drought_CI), lty = 1, color = 'red')
+```
+```{r}
+#separate data by day
+corn_data_drought <-corn_data_drought %>%
+  group_by(genotype,treatment)
+corn_data_drought_day6 <-corn_data_drought%>%
+  filter(day == "6")
+corn_data_drought_day7 <-corn_data_drought%>%
+  filter(day == "7")
+corn_data_drought_day8 <-corn_data_drought%>%
+  filter(day == "8")
+corn_data_drought_day9 <-corn_data_drought%>%
+  filter(day == "9")
+corn_data_drought_day10 <-corn_data_drought%>%
+  filter(day == "10")
+corn_data_drought_day11 <-corn_data_drought%>%
+  filter(day == "11")
+corn_data_drought_day12 <-corn_data_drought%>%
+  filter(day == "12")
+corn_data_drought_day13 <-corn_data_drought%>%
+  filter(day == "13")
+
+#Bootstrap day data
+boot_drought_corn_6 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day6, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+boot_drought_corn_7 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day7, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+  
+boot_drought_corn_8 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day8, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+boot_drought_corn_9 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day9, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+boot_drought_corn_10 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day10, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+boot_drought_corn_11 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day11, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+boot_drought_corn_12 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day12, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+boot_drought_corn_13 <- replicate(n = 100, simplify = FALSE,
+                       expr = slice_sample(corn_data_drought_day13, prop =  1, replace = TRUE) %>% 
+                         # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows() 
+
+drought_6<-boot_drought_corn_6%>%
+  summarise(.groups = "keep", treatment_height = mean(boot_mean_height))
+ 
+drought_7<-boot_drought_corn_7%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_8<-boot_drought_corn_8%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_9<-boot_drought_corn_9%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_10<-boot_drought_corn_10%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_11<-boot_drought_corn_11%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_12<-boot_drought_corn_12%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+drought_13<-boot_drought_corn_13%>%
+  summarise(.groups = "keep",treatment_height = mean(boot_mean_height))
+
+```
+```{r}
+drought_6_bar<-ggplot(drought_6, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_6_bar
+
+drought_7_bar<-ggplot(drought_7, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_7_bar
+
+drought_8_bar<-ggplot(drought_8, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_8_bar
+
+drought_9_bar<-ggplot(drought_9, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_9_bar
+
+drought_10_bar<-ggplot(drought_10, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_10_bar
+
+drought_11_bar<-ggplot(drought_11, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_11_bar
+
+drought_12_bar<-ggplot(drought_12, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_12_bar
+
+drought_13_bar<-ggplot(drought_13, aes(x = genotype, y = treatment_height, fill = treatment))+
+  geom_col(position = "dodge") +geom_errorbar(aes(ymin = treatment_height - sd(treatment_height), ymax = treatment_height + sd(treatment_height), width = 0.5), position = position_dodge(0.9))+
+  scale_y_continuous(limits = c(0,1500))
+
+drought_13_bar
+
+```
+```{r}
+plots <- list()
+for (i in 1:8) {
+  plots[[1]] <- drought_6_bar
+  plots[[2]] <- drought_7_bar
+  plots[[3]] <- drought_8_bar
+  plots[[4]] <- drought_9_bar
+  plots[[5]] <- drought_10_bar
+  plots[[6]] <- drought_11_bar
+  plots[[7]] <- drought_12_bar
+  plots[[8]] <- drought_13_bar
+}
+saveGIF(expr = print(plots), clean = TRUE, movie.name = "heat_plot.gif", ani.width = 500, ani.height = 500, loop = 5, convert = "magick", fps = 10)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+

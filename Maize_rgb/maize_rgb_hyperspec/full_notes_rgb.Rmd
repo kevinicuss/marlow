@@ -1,0 +1,3656 @@
+---
+title: "Full_RGB_Notes"
+author: "Kevin"
+date: "2023-04-03"
+output: html_document
+html_document:
+    theme: cosmo
+    css: styles.css
+    code_folding: hide
+toc_float:True    
+toc: yes
+---    
+
+This Document will bring together my total cleaned notes for RGB into one cohesive document for others to use. This document will look at data from the Experiment ranging from H8-H13 control plants were exposed to optimum growth temperatures and water saturation. The three treatments were exposed to either heat, drought or a combination of both. We analyzed numerous physical traits including height, width, and convex hull. In addition to physical traits I also included color data to see how the color of the tissue changing over the period of the experiement is corellated with the plant's health.
+
+Contents for RGB
+
+1.) outlier removal  
+2.) data visualization using various plots such as scatter, line, bar and heatmaps  
+3.) Bootstrap simulation of data to find confidence intervals and standard error of our data  
+4.) Permutation simulation of data to look at relations between height, convex_hull area, and color wheel hue  
+5.) Basic Statistical Analysis  
+6.) Post processing ANOVA, TukeyHSD and linear model generation
+
+
+***
+# Contents for RGB{.tabset .tabset-fade .tabset-pills}
+***
+1. [Outlier Removal and Data Import](#outlier-removal-data-import)
+
+2. [Data Visualization](#data-visualization)
+
+3. [Bootstrap Simulation](#bootstrap-simulation)
+
+4. [Permutation Simulation](#permutation-simulation)
+
+5. [Basic Statistical Analysis](#basic-statistical-analysis)
+
+6. [Post Processing](#post-processing)
+
+
+***
+## Outlier Removal and Data Import {#outlier-removal-and-data-import}
+***
+
+
+
+```{r}
+#Libraries
+
+library("htmlwidgets")
+
+library("DT")
+
+library("shiny")
+
+library("tidyverse") # a set of packages for data manipulation and visualization, including ggplot2.
+
+library("hrbrthemes") # provides additional themes and color palettes for ggplot2.
+
+library("viridis") #a color palette designed to be visually appealing and perceptually uniform.
+
+library("ggplot2") #  a popular plotting package for creating complex and aesthetically pleasing visualizations.
+
+library("ggThemeAssist") # a package that provides a graphical user interface for customizing ggplot2 themes.
+
+library("broom") #  a package for tidying statistical models and extracting useful information from them.
+
+library("ggfortify") # extends ggplot2 with methods for visualizing various statistical models.
+
+library("ggforce") #  a package that extends ggplot2 with additional geometries and scales.
+
+library("magrittr") # a package for creating more readable and efficient code by using the pipe operator %>%
+
+library("car") # a package for statistical analysis and visualization of regression models.
+
+library("GGally") # provides additional tools for exploring multivariate data using ggplot2.
+
+library("pheatmap") # a package for creating heatmaps and clustering dendrograms.
+```
+
+```{r}
+############
+#Full Raw Data
+corn_data_full <-read.delim("/Users/propst/Desktop/kp_maize_project_folders/hyperspec_csv/h8-h13_full.txt")
+###############
+```
+
+*** Experimental Setup ***
+
+Experiment: Refers to different experiment IDs (e.g., H9, H10, H11), which indicate different replicates within the same overall study.
+
+Day: Day 8 - 13 for all data points, representing the time point when the data was collected.
+
+Genotype: B73, Mo17, oh43, OH33, Ki11, PHG50, NC358, TX303, PHJ40
+
+Treatment: The treatment applied is heat, drought, and heat-drought.
+
+
+*** Plot and Plant Information: ***
+
+Plot: Refers to the specific plot within the experimental design where the plants were grown (e.g., plots 125, 163, 199).
+
+Plant: Plant identifier within each plot (e.g., A, B), differentiating multiple plants per plot.
+
+
+*** Geometric Properties ***
+
+Percent Necrosis: This column indicates the percentage of necrotic (dead) tissue on each plant. It ranges from 0.01892 (very low necrosis) to 0.42900 (high necrosis), reflecting varying levels of damage from heat and drought stress.
+
+Solidity: A measure of the "compactness" of the plant's shape. It is calculated as the ratio of the plant's area to its convex hull area. Lower solidity values (e.g., 0.073 for plant B in plot 125) indicate a more irregular shape, while higher values (e.g., 0.099 for plant A in plot 163) indicate a more compact plant structure.
+
+Convex Hull Area: The area of the convex hull surrounding the plant, which might reflect the extent of plant spread. This metric tends to be larger than the regular area since it measures the outermost boundary of the plant.
+
+Area: The area covered by each plant in square units. For example, plant B in plot 163 has a much larger area (60,420 units) compared to other plants.
+
+Perimeter: The boundary length of the object (e.g., maize kernel).
+
+Width & Height: Dimensions of the object along horizontal and vertical axes, respectively.
+
+Longest Path: Likely the longest distance between two points on the object's surface, which might represent the major axis or a similar metric.
+
+Center of Mass: Coordinates indicating the central point of mass in the object.
+
+Convex Hull Vertices: The number of vertices in the convex hull that encloses the object, which gives a sense of the object's shape complexity.
+
+In Frame: Boolean (TRUE or FALSE) indicating whether the object is fully within the image frame.
+
+
+*** Ellipse Properties ***
+
+Ellipse Center: Coordinates of the ellipse's center fit around the object.
+
+Major & Minor Axes: Length of the longest and shortest diameters of the fitted ellipse.
+
+Ellipse Angle: The orientation angle of the ellipse.
+
+Ellipse Eccentricity: A measure of the ellipse’s deviation from a perfect circle, where higher values indicate a more elongated shape.
+
+
+```{r}
+# Housekeeping of data to make sure genotypes are consistently named and obvious outliers removed and Genotypes that were not used because of issues collecting data at the time
+
+# Remove unused genotypes or measurement that might be extreme
+corn_data_full <- corn_data_full%>%
+  filter(width < 2500,
+         height < 3000,
+         genotype != "PH207",
+         genotype != "KY21",
+         genotype != "B84")%>%
+    group_by(plot,genotype, treatment, experiment,day)
+
+
+#Change the name of genotypes so they are consisitent
+corn_data_full$treatment <- gsub('["9"]', 'heat', corn_data_full$treatment)
+corn_data_full$treatment <-  gsub('heat-drought', "heatdrought", corn_data_full$treatment)
+corn_data_full$genotype <- gsub('ki11', "Ki11", corn_data_full$genotype)
+corn_data_full$genotype <- gsub('OH43','oh43', corn_data_full$genotype)
+
+data_B73_hd <- corn_data_full%>%
+  filter(genotype == "B73",
+         day == 13,
+         treatment == "heatdrought")
+
+corn_data_full
+
+```
+This code performs housekeeping tasks on the corn_data_full dataset to ensure data consistency, remove extreme values and unused genotypes, and filter the data for specific conditions. Here’s a breakdown of each step:
+
+*** Removing Outliers and Unused Genotypes ***
+
+The filter() function removes:
+Rows where the width is 2500 or more.
+Rows where the height is 3000 or more.
+Rows where the genotype is "PH207", "KY21", or "B84" (these genotypes are excluded due to issues in data collection).
+The data is then grouped by plot, genotype, treatment, experiment, and day.
+
+*** Standardizing Genotype and Treatment Names ***
+
+The gsub() function is used to make sure the names are consistent:
+The treatment column is modified to replace '9' with 'heat', potentially correcting a typo.
+The treatment name 'heat-drought' is changed to 'heatdrought' for consistency.
+The genotype column is modified to capitalize 'ki11' to 'Ki11'.
+The genotype 'OH43' is changed to lowercase 'oh43' to ensure uniformity.
+
+*** Filtering for Specific Conditions ***
+
+A new dataset data_B73_hd is created by filtering for:
+The genotype is "B73".
+The day is 13.
+The treatment is "heatdrought".
+Output of head(data_B73_hd):
+This will show the first few rows of the filtered dataset containing only the B73 genotype under the "heatdrought" treatment on day 13.
+
+This code helps clean up and standardize the dataset, ensuring that only relevant, consistent, and well-behaved data is kept for further analysis. Let me know if you need additional analysis or further modifications to the dataset!
+
+***
+###Outlier Removal Mahalanobis distance method Explanation
+***
+```{r}
+# Using the Mahalanobis distance method for multi-phenotypic outlier removal.
+
+# The Mahalanobis distance method is a statistical technique used for outlier detection in multivariate datasets. It calculates the distance between each data point and the mean of the dataset, taking into account the covariance between the variables. The method is named after Prasanta Chandra Mahalanobis, who developed it in 1936.
+# 
+# The Mahalanobis distance is defined as the distance between a data point x and the mean vector µ of a multivariate dataset, scaled by the inverse of the covariance matrix Σ:
+# 
+# d^2 = (x - µ)^T Σ^-1 (x - µ)
+# 
+# Here, the transpose symbol (T) denotes the transpose of the difference between x and µ. The Mahalanobis distance is a measure of how many standard deviations away from the mean a data point is in each dimension, taking into account the correlations between the variables.
+# 
+# The Mahalanobis distance can be used for outlier detection by comparing the distances of each data point to a threshold value, which is often determined by a chi-squared distribution with degrees of freedom equal to the number of variables in the dataset. Data points with distances greater than the threshold value are considered outliers.
+# 
+# The Mahalanobis distance method is widely used in various fields such as finance, engineering, and biology, especially for analyzing complex datasets with many variables. It can be an effective method for outlier detection in multivariate datasets, as it takes into account the correlations between the variables and is less sensitive to outliers in individual dimensions.
+
+corn_data <- corn_data_full%>%
+  group_by(genotype, treatment, day)
+
+#Scatterplot of original data
+ggplot(corn_data, aes(x = height, y = width, color = genotype)) + 
+  geom_point() + facet_wrap(vars(day))+
+  labs(title = "Plant Phenotypic Data")
+
+#covariance matrix (p x p) of the distribution.  
+cov.mat <- cov(corn_data[ ,9])
+
+#Returns the squared Mahalanobis distance of all rows
+mah.dist <- mahalanobis(corn_data[,9], colMeans(corn_data[ ,9]), cov.mat)
+
+# Define the cutoff based on the chi-squared distribution with 8 degrees of freedom. The DF = the number of genotypes - 1
+cutoff <- qchisq(0.95, df = 13) 
+
+#Removes outlier data
+data_clean <- subset(corn_data, mah.dist <= cutoff)
+
+cat("Number of outliers removed:", nrow(corn_data) - nrow(data_clean), "\n")
+
+#scatterplot of data after the outlier removal
+ggplot(data_clean, aes(x = height, y = width, color = genotype)) + 
+  geom_point() + facet_wrap(vars(day))+
+  labs(title = "Plant Phenotypic Data")
+
+#This Version of outlier removal takes out 353 samples from my total dataset
+#Creates csv file
+write.csv(data_clean, file = "~/Desktop/data_clean_Mahalanobis.csv", row.names = FALSE)
+
+clean_data_B73_hd <- data_clean%>%
+  filter(genotype == "B73",
+         day == 13,
+         treatment == "heatdrought")
+nrow(data_clean)
+clean_data_B73_hd
+```
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Group data (if needed)
+corn_data <- corn_data_full #%>%
+  #group_by(genotype, treatment, day,plant)
+
+# Scatterplot of original data to visualize the initial data distribution
+ggplot(corn_data, aes(x = height, y = width, color = genotype)) + 
+  geom_point() + facet_wrap(vars(day)) +
+  labs(title = "Plant Phenotypic Data")
+
+# Define the selected geometric features
+geometric_features <- c("percent.necrosis", "solidity", "convex_hull_area", "area", 
+                        "perimeter", "width", "height", "longest_path", 
+                        "center_of_mass", "convex_hull_vertices")
+
+corn_geometric <- corn_data %>%
+  select(7:14) %>%
+  mutate(across(everything(), as.numeric))  # Convert all selected columns to numeric
+
+# Check the structure to ensure all selected columns are now numeric
+#str(corn_geometric)
+
+
+# Convert `corn_geometric` to numeric where necessary (assuming `center_of_mass` is a numeric representation here)
+corn_geometric <- corn_geometric %>% 
+  mutate(across(everything(), as.numeric))
+
+# Calculate the covariance matrix for the selected features
+cov.mat <- cov(corn_geometric[6:13], use = "complete.obs")
+
+# Calculate the Mahalanobis distance for each row based on the geometric features
+mah.dist <- mahalanobis(corn_geometric[6:13], colMeans(corn_geometric[6:13], na.rm = TRUE), cov.mat)
+
+# Define the cutoff based on the chi-squared distribution with degrees of freedom equal to the number of features
+df <- length(geometric_features)-1
+cutoff <- qchisq(0.999, df = df)
+
+# Remove outliers based on Mahalanobis distance
+data_clean <- subset(corn_data, mah.dist <= cutoff)
+
+cat("Number of outliers removed:", nrow(corn_data) - nrow(data_clean), "\n")
+
+# Scatterplot of data after the outlier removal
+ggplot(data_clean, aes(x = height, y = width, color = genotype)) + 
+  geom_point() + facet_wrap(vars(day)) +
+  labs(title = "Plant Phenotypic Data (After Outlier Removal)")
+
+# Save the cleaned data to a CSV file
+write.csv(data_clean, file = "~/Desktop/data_clean_Mahalanobis.csv", row.names = FALSE)
+
+# Filter for a specific subset of the cleaned data (example)
+clean_data_B73_hd <- data_clean %>%
+  filter(genotype == "B73", day == 13, treatment == "heatdrought")
+nrow(data_clean)
+clean_data_B73_hd
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Set number of repetitions for sampling
+n.reps <- 1000  # You can increase or decrease this based on your needs
+sample_size <- 380  # Adjust this depending on your dataset size
+
+# Replicate the sampling process WITH REPLACEMENT to get sample means of plant areas
+area_sampling_dist <- replicate(n = n.reps, simplify = FALSE, 
+    expr = slice_sample(data_clean %>% ungroup(), replace = TRUE, n = sample_size) %>%
+      summarise(mean_area = mean(area))) %>%   # Calculate the mean area for each sample
+  bind_rows()
+
+# Calculate the true mean area in the full dataset
+true_mean_area <- mean(data_clean$area)
+
+# Generate the plot
+ggplot(area_sampling_dist, aes(x = mean_area)) +
+  geom_histogram(binwidth = 500, color = "white", fill = "lightblue") +  # Adjust binwidth as needed
+  ggtitle("Sampling Distribution of Plant Areas") +
+  
+  # Add vertical line for true mean area
+  geom_vline(xintercept = true_mean_area, color = "red", linetype = "dashed") +
+  geom_text(aes(x = true_mean_area, y = 50, label = paste("True Mean Area:", round(true_mean_area, 2))), 
+            color = "red", hjust = -0.1, size = 4) +
+  
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
+```
+
+```{r}
+# Define the conversion factor from pixels to cm based on 88 pixels per inch
+conversion_factor <- 2.54 / 88  # Conversion from pixels to cm
+
+# Convert area from pixels to cm²
+data_clean$area_cm2 <- data_clean$area * (conversion_factor^2)
+
+# Set number of repetitions for sampling
+n.reps <- 1000
+sample_size <- 380
+
+# Replicate the sampling process WITH REPLACEMENT to get sample means of plant areas (in cm²)
+area_sampling_dist <- replicate(n = n.reps, simplify = FALSE, 
+    expr = slice_sample(data_clean %>% ungroup(), replace = TRUE, n = sample_size) %>%
+      summarise(mean_area_cm2 = mean(area_cm2))) %>%   # Calculate the mean area in cm² for each sample
+  bind_rows()
+
+# Confidence level z-value for 95% confidence interval
+z_value <- 1.96  # For 95% confidence
+
+# Sample Estimate (Mean of Plant Area in cm²)
+sample_estimate_area_cm2 <- mean(data_clean$area_cm2)
+
+# Standard Error of the mean
+sample_error_area_cm2 <- sd(data_clean$area_cm2) / sqrt(nrow(data_clean))
+
+# Calculate the lower and upper bounds of the 95% confidence interval
+ci_lower <- sample_estimate_area_cm2 - z_value * sample_error_area_cm2
+ci_upper <- sample_estimate_area_cm2 + z_value * sample_error_area_cm2
+
+# Generate the plot for area in cm², adding confidence intervals
+ggplot(area_sampling_dist, aes(x = mean_area_cm2)) +
+  geom_histogram(binwidth = 0.1, color = "white", fill = "lightblue") +  # Reduce binwidth for finer resolution
+  ggtitle("Sampling Distribution of Plant Areas (in cm²) with Confidence Intervals") +
+  
+  # Add vertical line for true mean area in cm²
+  geom_vline(xintercept = sample_estimate_area_cm2, color = "red", linetype = "dashed") +
+  geom_text(aes(x = sample_estimate_area_cm2, y = 50, label = paste("True Mean Area:", round(sample_estimate_area_cm2, 2), "cm²")), 
+            color = "red", hjust = -0.1, size = 4) +
+  
+  # Add vertical lines for confidence interval
+  geom_vline(xintercept = ci_lower, color = "blue", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = ci_upper, color = "blue", linetype = "dashed", size = 1) +
+  
+  # Annotate confidence interval bounds
+  geom_text(aes(x = ci_lower, y = 50, label = paste("Lower CI:", round(ci_lower, 2))), color = "blue", hjust = -0.1, size = 4) +
+  geom_text(aes(x = ci_upper, y = 50, label = paste("Upper CI:", round(ci_upper, 2))), color = "blue", hjust = -0.1, size = 4) +
+  
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
+
+```
+```{r}
+# Filter data to only include control samples
+control_data <- data_clean %>% filter(treatment == "control")
+
+# Confidence level z-value for 95% confidence interval
+z_value <- 1.96  # For 95% confidence
+
+# Sample Estimate (Mean of Plant Area in cm² for control samples)
+sample_estimate_control_cm2 <- mean(control_data$area_cm2)
+
+# Standard Error of the mean for control samples
+sample_error_control_cm2 <- sd(control_data$area_cm2) / sqrt(nrow(control_data))
+
+# Calculate the lower and upper bounds of the 95% confidence interval for control samples
+ci_lower_control <- sample_estimate_control_cm2 - z_value * sample_error_control_cm2
+ci_upper_control <- sample_estimate_control_cm2 + z_value * sample_error_control_cm2
+
+# Replicate the sampling process WITH REPLACEMENT for control samples
+n.reps <- 1000
+sample_size <- 500
+
+# Sampling distribution for control samples
+control_area_sampling_dist <- replicate(n = n.reps, simplify = FALSE, 
+    expr = slice_sample(control_data %>% ungroup(), replace = TRUE, n = sample_size) %>%
+      summarise(mean_area_cm2 = mean(area_cm2))) %>%   # Calculate the mean area in cm² for each sample
+  bind_rows()
+
+# Generate the plot for control sample areas in cm², adding confidence intervals
+ggplot(control_area_sampling_dist, aes(x = mean_area_cm2)) +
+  geom_histogram(binwidth = 0.1, color = "white", fill = "lightblue") +  # Reduce binwidth for finer resolution
+  ggtitle("Sampling Distribution of Control Plant Areas (in cm²) with Confidence Intervals") +
+  
+  # Add vertical line for sample estimate mean area in cm²
+  geom_vline(xintercept = sample_estimate_control_cm2, color = "red", linetype = "dashed") +
+  geom_text(aes(x = sample_estimate_control_cm2, y = 50, label = paste("Mean Area:", round(sample_estimate_control_cm2, 2), "cm²")), 
+            color = "red", hjust = -0.1, size = 4) +
+  
+  # Add vertical lines for confidence interval for control samples
+  geom_vline(xintercept = ci_lower_control, color = "blue", linetype = "dashed", size = 1) +
+  geom_vline(xintercept = ci_upper_control, color = "blue", linetype = "dashed", size = 1) +
+  
+  # Annotate confidence interval bounds
+  geom_text(aes(x = ci_lower_control, y = 50, label = paste("Lower CI:", round(ci_lower_control, 2))), color = "blue", hjust = -0.1, size = 4) +
+  geom_text(aes(x = ci_upper_control, y = 50, label = paste("Upper CI:", round(ci_upper_control, 2))), color = "blue", hjust = -0.1, size = 4) +
+  
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
+```
+
+## Basic Statistical Analysis {#basic-statistical-analysis}
+```{r}
+# This is the sample distribution for the different treatements over the course of the experiements.
+# 
+#Summary statistics is a number derived from a dataset that summarizes a property of the entire data set. This includes:
+# 1. Bootstap analysis for the uncertainty . Measuring of central tendency : mean, median, Mode
+# 2. Measures of spread or dispersion : Interquartile Range, Interpoloated percentiles
+# 3.) Measures of Correlation
+# 4.) Measure of the shape of the distribution.
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Simulate n.reps times to get the sample distribution
+n.reps <- 1000
+
+# Increase the sample size by sampling more data
+sample_size <- nrow(data_clean)  # You can adjust this based on the size of your dataset
+
+# Replicate the sampling process WITH REPLACEMENT and larger sample size
+data.sampling.dist <- replicate(n = n.reps, simplify = FALSE, 
+    expr = slice_sample(data_clean %>% ungroup(), replace = TRUE, n = sample_size) %>%  # Increase sample size and use replace = TRUE
+      summarise(
+        prop_control = mean(treatment == "control"),
+        prop_heat = mean(treatment == "heat"),
+        prop_drought = mean(treatment == "drought"),
+        prop_heatdrought = mean(treatment == "heatdrought"),
+        .groups = "drop")) %>%   # Drop groups after summarization
+  bind_rows()
+
+# Calculate actual proportions in the full dataset
+true_props <- data_clean %>%
+  ungroup() %>%
+  summarise(
+    true_control = mean(treatment == "control"),
+    true_heat = mean(treatment == "heat"),
+    true_drought = mean(treatment == "drought"),
+    true_heatdrought = mean(treatment == "heatdrought")
+  )
+
+# Reshape data for ggplot
+melted_data <- pivot_longer(data.sampling.dist, 
+                            cols = starts_with("prop_"), 
+                            names_to = "treatment_type", 
+                            values_to = "proportion")
+
+# Prepare true values for annotations and vertical lines
+true_props_long <- pivot_longer(true_props, cols = everything(), 
+                                names_to = "treatment_type", 
+                                values_to = "true_proportion")
+
+# Fix the names in true_props_long to match the treatment_type in melted_data
+true_props_long$treatment_type <- gsub("true_", "prop_", true_props_long$treatment_type)
+
+# Generate the plot with adjusted binwidth
+ggplot(melted_data, aes(x = proportion)) +
+  geom_histogram(binwidth = 0.015,bins = , color = "white", fill = "lightblue") +  # Smaller binwidth for finer resolution
+  ggtitle("Sampling Distribution of Treatment Proportions") +
+  
+  # Add vertical lines and annotations for true values for each facet
+  geom_vline(data = true_props_long, aes(xintercept = true_proportion), color = "red", linetype = "dashed") +
+  geom_text(data = true_props_long, aes(x = true_proportion, y = 80, label = gsub("prop_", "True ", treatment_type)), 
+            color = "red", hjust = -0.1, size = 4) +
+  
+  facet_wrap(~ treatment_type, scales = "free_x") +  # Facet by treatment type with free x scales
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+
+```
+1.) Measure a population parameter: It take too much time to measure actual parameter, take estimate from sample population then measure the sampling error.
+  - First find the estimate of the sample, sample distribution, sampling error.
+  - Form a Null hypothesis: Area in the different treatments are significantly different than the control samples.
+
+***
+## Data Visualization {#data-visualization}
+***
+
+```{r}
+##Bar graph and violin plot of data that has been cleaned using the Mahalanobis distance method
+#Bar graph will demonstrate the number of replications in each genotype
+
+#This graph will determine how many reps we have each genotype. I used day 10 because it will take into account late germination plants and plants that died later in the treatment process.
+data_clean_rep <- data_clean%>%
+  filter(day == 10)
+genotype_bar <- data_clean_rep%>%
+  ggplot(aes(x= genotype, fill = treatment))+geom_bar()
+
+genotype_bar + facet_wrap(vars(treatment)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+
+#Violin Plot Shows the difference in growth rate per day based on treatment
+p <- corn_data %>%
+  ggplot(aes(x = factor(day), y = height,color = treatment))+
+  geom_violin(width=1.4) +
+  #geom_boxplot() +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") +
+  geom_jitter(size = 0.001, width = 0.2 )
+
+
+p + facet_wrap(vars(treatment)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+
+ggsave("geom_violin.png", height = 10,width = 15)
+```
+
+
+### Line Graphs
+```{r}
+# Isolates examples by treatment and Plant type
+# This is required so that I can properly display my line graphs below and the grah doesnt connect incorrect points together.
+
+corn_control <- corn_data%>%
+  filter(treatment== "control", plant == "A")
+corn_control<- corn_control%>%
+  group_by(experiment, plot, plant, genotype, day)
+
+corn_control_B <- corn_data%>%
+  filter(treatment== "control", plant == "B")
+corn_control<- corn_control%>%
+  group_by(experiment, plot,plant, day)
+
+corn_heat <- corn_data%>%
+  filter(treatment== "heat", plant == "A")
+corn_control<- corn_control%>%
+  group_by(experiment, plot, plant, genotype, day)
+
+corn_heat_B <- corn_data%>%
+  filter(treatment== "heat", plant == "B")
+corn_control<- corn_control%>%
+  group_by(experiment, plot,plant, day)
+
+corn_drought <- corn_data%>%
+  filter(treatment== "drought", plant == "A")
+
+
+corn_drought_B <- corn_data%>%
+  filter(treatment== "drought", plant == "B")
+
+
+corn_heatdrought <- corn_data%>%
+  filter(treatment== "heatdrought", plant == "A")
+
+
+corn_heatdrought_B <- corn_data%>%
+  filter(treatment== "heatdrought", plant == "B")
+
+```
+
+### Treatment Line Graphs
+```{r}
+# These line graphs display an image of how maize exposed to different treatments grew based on genotype, day, and the experiment in which the plot was part of.
+
+# Visualized all control A plants
+p <- corn_control%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_control, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_control, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Control A" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+# wrapped by genotype
+p + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+#Visualize all control group B plants
+p <- corn_control_B%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_control_B, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_control_B, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Control B" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+p + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+
+# Visualized heat plant A
+heat <- corn_heat%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_heat, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_heat, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Heat A" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+heat + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+
+# Visualize Heat group B plants
+heat_B <- corn_heat_B%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_heat_B, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_heat_B, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Heat B" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+heat_B + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+# Drought group A plants
+drought <- corn_drought%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_drought, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_drought, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Drought A" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+drought + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+drought_B <- corn_drought_B%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_drought_B, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_drought_B, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Drought B" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+drought_B + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+heatdrought <- corn_heatdrought%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_heatdrought, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_heatdrought, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Heat and Drought A" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+heatdrought + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+heatdrought_B <- corn_heatdrought_B%>%
+  ggplot(aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point()+
+  geom_line()+
+  geom_line(data = corn_heatdrought_B, aes(x = day, y = height, group = experiment, color = experiment))+
+  geom_point(data = corn_heatdrought_B, aes(x = day, y = height))+
+  scale_y_continuous(limits = c(0, 1600))+
+  #geom_smooth(se = FALSE) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    legend.position="right",
+    plot.title = element_text(size=11)
+  ) +
+  ggtitle("Height Change Over Days 6-13 Heat and Drought B" ) +
+  xlab("Days Analyzed") +ylab("Height (pixels)") 
+  #geom_jitter()
+
+heatdrought_B + facet_wrap(vars(genotype)) + theme(plot.subtitle = element_text(family = "sans"),
+    plot.caption = element_text(family = "sans"),
+    axis.title = element_text(family = "sans",
+        size = 4), plot.title = element_text(family = "sans")) + theme(axis.title = element_text(size = 13,
+    face = "bold", vjust = 1))
+
+```
+
+
+### Heatmaps
+```{r}
+
+#find the means values for each physical trait you want to map
+
+cds <- data_clean %>%
+  group_by(genotype, treatment, day)%>%
+  summarise(height = mean(height),
+            width = mean(width),
+            area = mean(area),
+            convex_hull_area = mean(convex_hull_area),
+            percent.necrosis = mean(percent.necrosis),
+            longest_path = mean(longest_path),
+            solidity = mean(solidity),
+            #center_of_mass = mean(center_of_mass),
+            convex_hull_vertices = mean(convex_hull_vertices),
+            ellipse_major_axis = mean(ellipse_major_axis),
+            ellipse_minor_axis = mean(ellipse_minor_axis),
+            ellipse_angle = mean(ellipse_angle),
+            convex_hull_area = mean(convex_hull_area),
+            ellipse_eccentricity = mean(ellipse_eccentricity),
+            hue_circular_mean = mean(hue_circular_mean)
+            )%>%
+  ungroup()
+
+
+#Filter your data by the day and treatment
+
+heat_filter <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "heat")
+heat_filter
+
+drought_filter <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "drought")
+head(drought_filter)
+
+heatdrought_filter <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "heatdrought")
+head(heatdrought_filter)
+
+control_filter <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "control")
+head(control_filter)
+
+#creates ratio of the heat data compared to control
+ratio_heat <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = heat_filter$height/control_filter$height,
+            width =heat_filter$width/control_filter$width,
+            area  =heat_filter$area/control_filter$area,
+            percent.necrosis = heat_filter$percent.necrosis/control_filter$percent.necrosis,
+            longest_path = heat_filter$longest_path/control_filter$longest_path,
+            solidity = heat_filter$solidity/control_filter$solidity,
+            convex_hull_vertices = heat_filter$convex_hull_vertices/control_filter$convex_hull_vertices, 
+            convex_hull_area =heat_filter$convex_hull_area /control_filter$convex_hull_area,
+            #ellipse_major_axis =treatment_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = heat_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis,
+            ellipse_angle = heat_filter$ellipse_angle /control_filter$ellipse_angle,
+            ellipse_eccentricity = heat_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity,
+            hue_circular_mean = heat_filter$hue_circular_mean/control_filter$hue_circular_mean
+            )
+
+#Takes the log ratio of each trait so the values will not be too skewed.
+log_ratio_h <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = log2(heat_filter$height/control_filter$height),
+            width =log2(heat_filter$width/control_filter$width),
+            area  =log2(heat_filter$area/control_filter$area),
+            percent.necrosis = log2(heat_filter$percent.necrosis/control_filter$percent.necrosis),
+            longest_path = log2(heat_filter$longest_path/control_filter$longest_path),
+            solidity = log2(heat_filter$solidity/control_filter$solidity),
+            convex_hull_vertices= log2(heat_filter$convex_hull_vertices/control_filter$convex_hull_vertices),
+            convex_hull_area =log2(heat_filter$convex_hull_area /control_filter$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(heat_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(heat_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(heat_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(heat_filter$hue_circular_mean/control_filter$hue_circular_mean)
+            )
+
+#pivot the data long so that it can be organized correctly in the heatmap
+pivot_ratio <- pivot_longer(log_ratio_h, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+#pivot_ratio
+
+#make into dataframe
+df_ratio <- as.data.frame(log_ratio_h)
+
+df_ratio[ , 1]
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#make dataframe into a matrix
+matrix_ratio <- as.matrix(df_ratio)
+
+
+#This sets the color pallete for our heatmap
+
+cols = colorRampPalette(c("purple", "white", "red"), bias = .70)(30)
+```
+
+
+```{r}
+#These are heatmaps of maize samples exposed to heat treatments.  
+#The first heatmap is scaled by rows and clustered by columns, but shows no correlations 
+log_p <- pheatmap((matrix_ratio), scale="row", color = cols, cluster_cols=TRUE, main = "Day 13 Heat Heatmap", angle_col = 45)
+
+#This heatmap looks at vs control 
+log_h_c <- pheatmap((matrix_ratio), color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "Heat to Control Day 13 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+log_no_scale <- pheatmap((matrix_ratio), color = cols, cluster_cols=TRUE,cluster_rows =TRUE , main = "Day 13 Heatmap Control", angle_col = 45, display_numbers = TRUE )
+
+g <- ggplot(pivot_ratio, aes(x = genotypes, y = Traits, fill = value))+
+  geom_tile(show.legend = TRUE, color = "black") +
+  theme_ipsum()
+
+
+#Saves image as a png file 
+ggsave("Heat.png",plot = log_h_c, height = 7, width =15)
+
+
+
+```
+
+```{r}
+
+ratio_drought <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = log2(drought_filter$height/control_filter$height),
+            width =log2(drought_filter$width/control_filter$width),
+            area  = log2(drought_filter$area/control_filter$area),
+            percent.necrosis = log2(drought_filter$percent.necrosis/control_filter$percent.necrosis),
+            longest_path = log2(drought_filter$longest_path/control_filter$longest_path),
+            solidity = log2(drought_filter$solidity/control_filter$solidity),
+            convex_hull_vertices = log2(drought_filter$convex_hull_vertices/control_filter$convex_hull_vertices), 
+            convex_hull_area = log2(drought_filter$convex_hull_area /control_filter$convex_hull_area),
+            #ellipse_major_axis =drought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(drought_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(drought_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity = log2(drought_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(drought_filter$hue_circular_mean/control_filter$hue_circular_mean)
+            )
+
+log2_ratio_drought <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = log2(drought_filter$height/control_filter$height),
+            width =log2(drought_filter$width/control_filter$width),
+            area  =log2(drought_filter$area/control_filter$area),
+            percent.necrosis = log2(drought_filter$percent.necrosis/control_filter$percent.necrosis),
+            longest_path = log2(drought_filter$longest_path/control_filter$longest_path),
+            solidity = log2(drought_filter$solidity/control_filter$solidity),
+            convex_hull_vertices = log2(drought_filter$convex_hull_vertices/control_filter$convex_hull_vertices), 
+            convex_hull_area =log2(drought_filter$convex_hull_area /control_filter$convex_hull_area),
+            #ellipse_major_axis =drought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(drought_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(drought_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity = log2(drought_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(drought_filter$hue_circular_mean/control_filter$hue_circular_mean)
+            )
+
+pivot_ratio <- pivot_longer(ratio_drought, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(ratio_drought)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)%>%
+  na.omit()
+
+cols = colorRampPalette(c("purple","white", "red"), bias = 0.95)(30)
+#p <- pheatmap(log(matrix_ratio), scale="column", color = cols)
+log_p <- pheatmap((matrix_ratio), scale="row", color = cols, cluster_cols=TRUE, main = "Day 13 Heatmap", angle_col = 45)
+log_d_c <- pheatmap((matrix_ratio), color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "Drought to Control Day 13 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+ggsave("Drought.png",plot = log_d_c, width =15)
+
+
+```
+
+```{r}
+unique(cds$treatment)
+ratio_hd <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = heatdrought_filter$height/control_filter$height,
+            width =heatdrought_filter$width/control_filter$width,
+            area  =heatdrought_filter$area/control_filter$area,
+            percent.necrosis = heatdrought_filter$percent.necrosis/control_filter$percent.necrosis,
+            longest_path = heatdrought_filter$longest_path/control_filter$longest_path,
+            solidity = heatdrought_filter$solidity/control_filter$solidity,
+            convex_hull_vertices=heatdrought_filter$convex_hull_vertices/control_filter$convex_hull_vertices,
+            convex_hull_area =heatdrought_filter$convex_hull_area /control_filter$convex_hull_area,
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = heatdrought_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis,
+            ellipse_angle = heatdrought_filter$ellipse_angle /control_filter$ellipse_angle,
+            ellipse_eccentricity=heatdrought_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity,
+            hue_circular_mean = heatdrought_filter$hue_circular_mean/control_filter$hue_circular_mean,
+            
+            )
+
+log_ratio_hd <- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = log2(heatdrought_filter$height/control_filter$height),
+            width =log2(heatdrought_filter$width/control_filter$width),
+            area  =log2(heatdrought_filter$area/control_filter$area),
+            percent.necrosis = log2(heatdrought_filter$percent.necrosis/control_filter$percent.necrosis),
+            longest_path = log2(heatdrought_filter$longest_path/control_filter$longest_path),
+            solidity = log2(heatdrought_filter$solidity/control_filter$solidity),
+            convex_hull_vertices= log2(heatdrought_filter$convex_hull_vertices/control_filter$convex_hull_vertices),
+            convex_hull_area =log2(heatdrought_filter$convex_hull_area /control_filter$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(heatdrought_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(heatdrought_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(heatdrought_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(heatdrought_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+
+percent_diff_hd<- cds%>%
+  summarise(genotypes = unique(genotype),
+            height = (heatdrought_filter$height-control_filter$height)/control_filter$height*100,
+            width =(heatdrought_filter$width-control_filter$width)/control_filter$width*100 ,
+            area  =(heatdrought_filter$area-control_filter$area)/control_filter$area*100,
+            percent.necrosis = (heatdrought_filter$percent.necrosis-control_filter$percent.necrosis)/control_filter$percent.necrosis*100,
+            longest_path = (heatdrought_filter$longest_path-control_filter$longest_path)/control_filter$longest_path*100,
+            solidity = (heatdrought_filter$solidity-control_filter$solidity)/control_filter$solidity*100,
+            convex_hull_vertices=(heatdrought_filter$convex_hull_vertices-control_filter$convex_hull_vertices)/control_filter$convex_hull_vertices*100,
+            convex_hull_area =(heatdrought_filter$convex_hull_area-control_filter$convex_hull_area)/control_filter$convex_hull_area*100,
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = (heatdrought_filter$ellipse_minor_axis-control_filter$ellipse_minor_axis)/control_filter$ellipse_minor_axis*100,
+            ellipse_angle = (heatdrought_filter$ellipse_angle-control_filter$ellipse_angle)/control_filter$ellipse_angle*100,
+            ellipse_eccentricity=(heatdrought_filter$ellipse_eccentricity-control_filter$ellipse_eccentricity)/control_filter$ellipse_eccentricity*100,
+            hue_circular_mean = (heatdrought_filter$hue_circular_mean-control_filter$hue_circular_mean)/control_filter$hue_circular_mean*100)
+
+pivot_ratio <- pivot_longer(log_ratio_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_ratio_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+cols = colorRampPalette(c("purple","white", "red"), bias = 1.6)(30)
+#p <- pheatmap(log(matrix_ratio), scale="column", color = cols)
+log_p <- pheatmap((matrix_ratio), scale="row", color = cols, cluster_cols=TRUE, main = "Day 13 Heatmap", angle_col = 45)
+log_hd_c <- pheatmap((matrix_ratio), scale = "row", color = cols, cluster_rows = FALSE, cluster_cols=TRUE, main = "Heat-Drought to Control Day 13 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "Heat-Drought to Control Day 13 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+
+
+ggsave("Heat-Drought.png",plot = log_hd_c, height = 7, width =15)
+
+```
+
+```{r}
+#Isolate individual days
+
+#day13
+heat_filter_d13 <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d13 <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d13 <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d13 <- cds%>%
+  filter(day == 13)%>%
+  filter(treatment == "control")
+#head(control_filter)
+
+#day12
+heat_filter_d12 <- cds%>%
+  filter(day == 12)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d12 <- cds%>%
+  filter(day == 12)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d12 <- cds%>%
+  filter(day == 12)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d12 <- cds%>%
+  filter(day == 12)%>%
+  filter(treatment == "control")
+#head(control_filter)
+
+#day11
+heat_filter_d11 <- cds%>%
+  filter(day == 11)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d11 <- cds%>%
+  filter(day == 11)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d11 <- cds%>%
+  filter(day == 11)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d11 <- cds%>%
+  filter(day == 11)%>%
+  filter(treatment == "control")
+#head(control_filter)
+
+#day 10
+heat_filter_d10 <- cds%>%
+  filter(day == 10)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d10 <- cds%>%
+  filter(day == 10)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d10 <- cds%>%
+  filter(day == 10)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d10 <- cds%>%
+  filter(day == 10)%>%
+  filter(treatment == "control")
+#head(control_filter)
+
+#day9
+heat_filter_d9 <- cds%>%
+  filter(day == 9)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d9 <- cds%>%
+  filter(day == 9)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d9 <- cds%>%
+  filter(day == 9)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d9 <- cds%>%
+  filter(day == 9)%>%
+  filter(treatment == "control")
+#head(control_filter)
+
+#day8
+heat_filter_d8 <- cds%>%
+  filter(day == 8)%>%
+  filter(treatment == "heat")
+#heat_filter
+
+drought_filter_d8 <- cds%>%
+  filter(day == 8)%>%
+  filter(treatment == "drought")
+#head(drought_filter)
+
+heatdrought_filter_d8 <- cds%>%
+  filter(day == 8)%>%
+  filter(treatment == "heatdrought")
+#head(heatdrought_filter)
+
+control_filter_d8 <- cds%>%
+  filter(day == 8)%>%
+  filter(treatment == "control")
+#head(control_filter)
+```
+
+```{r}
+heat_filter <- heat_filter_d12 %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter_d12%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter_d12%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter_d12%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter_d12%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter_d12%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter_d12%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#control_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 12 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+#ggsave("All_stresses_d12.png",log_hd_c, height = 12, width = 20)
+```
+
+
+```{r}
+heat_filter <- heat_filter %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#control_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 13 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+#ggsave("All_stresses_d13.png",log_hd_c, height = 12, width = 20)
+```
+
+```{r}
+heat_filter <- heat_filter_d11 %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter_d11%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter_d11%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter_d11%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter_d11%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter_d11%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter_d11%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#control_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 11 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+#ggsave("All_stresses_d11.png",log_hd_c, height = 12, width = 20)
+```
+
+
+```{r}
+heat_filter <- heat_filter_d10 %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter_d10%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter_d10%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter_d10%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter_d10%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter_d10%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter_d10%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#genotype_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+my_palette <- colorRampPalette(c("blue","white", "red"))(100)
+
+my_breaks <- seq(-max(abs(matrix_ratio)), max(abs(matrix_ratio)), length.out = length(my_palette))
+
+#log_hd_c <- pheatmap((matrix_ratio),color = my_palette, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 8 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE, breaks = my_breaks )
+
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 10 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+#ggsave("All_stresses_d10.png",log_hd_c, height = 12, width = 20)
+```
+```{r}
+heat_filter <- heat_filter_d9 %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter_d9%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter_d9%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter_d9%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter_d9%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter_d9%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter_d9%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#control_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+my_palette <- colorRampPalette(c("darkblue","lightblue","white", "red"))(100)
+
+my_breaks <- seq(-max(abs(matrix_ratio)), max(abs(matrix_ratio)), length.out = length(my_palette))
+
+#log_hd_c <- pheatmap((matrix_ratio),color = my_palette, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 8 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE, breaks = my_breaks )
+
+
+log_hd_c <- pheatmap((matrix_ratio),color = cols, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 9 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE )
+
+#ggsave("All_stresses_d9.png",log_hd_c, height = 12, width = 20)
+```
+```{r}
+heat_filter <- heat_filter_d8 %>%
+  mutate(genotype_t = paste0(genotype, ".h"))
+#heat_filter
+
+drought_filter <- drought_filter_d8%>%
+   mutate(genotype_t = paste0(genotype, ".d"))
+#head(drought_filter)
+
+heatdrought_filter <- heatdrought_filter_d8%>%
+   mutate(genotype_t = paste0(genotype, ".hd"))
+#heatdrought_filter
+
+control_filter <- control_filter_d8%>%
+   mutate(genotype_t = paste0(genotype, ".c"))
+#head(heatdrought_filter)
+
+control_filter_h <- control_filter_d8%>%
+     mutate(genotype_t = paste0(genotype, ".h"))
+
+control_filter_d <- control_filter_d8%>%
+  mutate(genotype_t = paste0(genotype, ".d"))
+
+control_filter_hd <- control_filter_d8%>%
+  mutate(genotype_t = paste0(genotype, ".hd"))
+
+control_filter_full <- rbind(control_filter_h, control_filter_d, control_filter_hd)
+#control_filter_full
+genotype_filter <- bind_rows(heat_filter,drought_filter, heatdrought_filter)
+genotype_filter$genotype<- NULL
+#control_filter
+
+log_genotype_hd <- genotype_filter%>%
+  summarise(genotypes = unique(genotype_t),
+            height = log2(genotype_filter$height/control_filter_full$height),
+            width =log2(genotype_filter$width/control_filter_full$width),
+            area  =log2(genotype_filter$area/control_filter_full$area),
+            percent.necrosis = log2(genotype_filter$percent.necrosis/control_filter_full$percent.necrosis),
+            longest_path = log2(genotype_filter$longest_path/control_filter_full$longest_path),
+            solidity = log2(genotype_filter$solidity/control_filter_full$solidity),
+            convex_hull_vertices= log2(genotype_filter$convex_hull_vertices/control_filter_full$convex_hull_vertices),
+            convex_hull_area =log2(genotype_filter$convex_hull_area /control_filter_full$convex_hull_area),
+            #ellipse_major_axis =heatdrought_filter$ellipse_major_axis /control_filter$ellipse_major_axis,
+            ellipse_minor_axis = log2(genotype_filter$ellipse_minor_axis /control_filter$ellipse_minor_axis),
+            ellipse_angle = log2(genotype_filter$ellipse_angle /control_filter$ellipse_angle),
+            ellipse_eccentricity=log2(genotype_filter$ellipse_eccentricity/control_filter$ellipse_eccentricity),
+            hue_circular_mean = log2(genotype_filter$hue_circular_mean/control_filter$hue_circular_mean),
+            
+            )
+
+pivot_ratio <- pivot_longer(log_genotype_hd, cols = c(height,width,area,percent.necrosis,longest_path,solidity,convex_hull_area,convex_hull_vertices,ellipse_minor_axis, ellipse_angle, ellipse_eccentricity, hue_circular_mean ), names_to = "Traits")
+pivot_ratio
+
+df_ratio <- as.data.frame(log_genotype_hd)
+
+#df_ratio
+
+
+
+rownames(df_ratio) <- df_ratio[ , 1]
+df_ratio <- df_ratio[ , -1]
+
+#df_ratio
+
+matrix_ratio <- as.matrix(df_ratio)
+
+my_palette <- colorRampPalette(c("darkblue","blue","lightblue","white", "red"))(9)
+
+my_breaks <- seq(-max(abs(matrix_ratio)), max(matrix_ratio), length.out = length(my_palette))
+
+log_hd_c <- pheatmap((matrix_ratio),color = my_palette, cluster_rows = TRUE, cluster_cols=TRUE, main = "All Stresses Control Day 8 Heatmap", angle_col = 45,clustering_distance_cols = "correlation", display_numbers = TRUE, breaks = my_breaks )
+
+ggsave("All_stresses_d8.png",log_hd_c, height = 12, width = 20)
+
+```
+
+***
+## Bootstrap Simulation{#bootstrap-simulation}
+***
+```{r}
+# Will be doing a hypothesis test to look at the sample and population distribution and perform bootstraping analysis to find the confidence intervals.
+
+# A confidence interval is calculated from a sample and provides a range of values that likely contains the unknown value of a population parameter. They are very similar to p-values. Confidence intervals from a sample to obtain a range for where the population parameter is likely to reside, and helps you gauge the amount of uncertainty in your sample estimate.
+
+# Hypothesis tests are crucial when you want to use sample data to make conclusions about a population because they account for sample error.
+
+# Will then perform permutation analysis to find p-values of the data to test against the null hypothesis.
+
+# p-values are the probability that a sample will have an effect at least as extreme as the effect observed in your sample if the null is correct
+
+corn_data_control<-corn_data_full%>%
+  filter(treatment =="control")%>%
+  group_by(genotype, day)
+
+corn_data_treatment <- corn_data_full%>%
+  filter(treatment != "control")%>%
+  group_by(genotype, treatment, day)
+
+```
+
+
+```{r}
+#sampling distribution of control and treatment plants
+
+ggplot(corn_data_control, aes(height, fill = "red"))+
+  geom_histogram(bins = 40)
+
+ggplot(corn_data_treatment, aes(height, fill = treatment))+
+  geom_histogram(bins = 40)
+
+```
+
+
+```{r}
+#Finding sampling error using bootstrapping and simulation
+
+boot_control <- replicate(n = 1000, simplify = FALSE,
+                       expr = slice_sample(corn_data_control, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+head(boot_control)
+
+# plotting distribution of control plants.
+
+control_distribution <- ggplot(boot_control, aes(x = boot_mean_height, group = day, color = day))+
+         geom_histogram(binwidth = 1/2)+ggtitle('boot_control')+
+  facet_wrap(vars(genotype))
+
+#head(control_distribution)
+
+
+#Treated Plants
+boot_treatment <- replicate(n = 1000, simplify = FALSE,
+                       expr = slice_sample(corn_data_treatment, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", boot_mean_height = mean(height),
+                                   boot_sd_height = sd(height)))%>%           # calculate proportion with mean()
+  bind_rows()  
+
+
+# plotting bootstrap distribution of treated plants.
+treatment_distribution <- ggplot(boot_treatment, aes(x = boot_mean_height, group = genotype, fill = genotype))+
+         geom_histogram(binwidth = 1/2)+ggtitle('boot_treatment')+ facet_wrap(vars(treatment,day))
+
+#head(treatment_distribution)
+
+```
+
+```{r}
+# Generate example data
+
+boot_control%>%
+  group_by(genotype, day)
+
+
+
+# Calculate the sample mean and standard deviation
+mean_sd_val <-boot_control%>%
+  group_by(genotype, day)%>%
+  summarise(mean_height = mean(boot_mean_height),
+            mean_sd = mean(boot_sd_height))
+
+
+
+mean_sd_val
+# Calculate the 95% confidence interval for the mean
+n <- length(boot_control)
+
+mean_sd_val <- mean_sd_val %>%
+  mutate(se = mean_sd/ sqrt(n))
+mean_sd_val
+z <- qnorm(0.975) # 2-sided z-value for 95% CI
+
+mean_sd_val <- mean_sd_val%>%
+  mutate(lower_ci = mean_height - z * se)
+            
+mean_sd_val <- mean_sd_val%>%
+  mutate(upper_ci = mean_height + z * se)
+
+
+mean_sd_val_sum <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 13)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_12 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 12)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_11 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 11)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_10 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 10)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_9 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 9)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_8 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 8)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+# Print the confidence interval
+cat("95% Confidence Interval for the Mean:", round(mean_sd_val$lower_ci, 2), "-", round(mean_sd_val$upper_ci, 2), "\n")
+
+#mean_sd_val
+
+#boot_control<- left_join(boot_control, mean_sd_val_sum, by = "genotype")
+
+
+```
+### Confidence Intervals
+```{r}
+#What are the Confidence Intervals. Confidence Intervals incorporate the uncertainty ans sample error to create a range of values the actual population is likely to fall within
+
+# Generate example data
+
+boot_control%>%
+  group_by(genotype, day)
+
+
+
+# Calculate the sample mean and standard deviation
+mean_sd_val <-boot_control%>%
+  group_by(genotype, day)%>%
+  summarise(mean_height = mean(boot_mean_height),
+            mean_sd = mean(boot_sd_height))
+
+
+
+# Calculate the 95% confidence interval for the mean
+n <- length(boot_control)
+
+mean_sd_val <- mean_sd_val %>%
+  mutate(se = mean_sd/ sqrt(n))
+
+# 2-sided z-value for 95% CI
+z <- qnorm(0.975) 
+
+mean_sd_val <- mean_sd_val%>%
+  mutate(lower_ci = mean_height - z * se)
+            
+mean_sd_val <- mean_sd_val%>%
+  mutate(upper_ci = mean_height + z * se)
+
+######################
+
+#Seperate data by day and find the CI for each day based on genotype and day
+mean_sd_val_sum <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 13)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_12 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 12)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_11 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 11)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_10 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 10)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_9 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 9)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+mean_sd_val_sum_8 <- mean_sd_val%>%
+  group_by(genotype,day)%>%
+  filter(day == 8)%>%
+  summarise(mean_lower_ci = mean(lower_ci),
+            mean_upper_ci = mean(upper_ci),
+            control_mean_height = mean(mean_height))
+
+####################
+
+# Print the confidence interval
+#cat("95% Confidence Interval for the Mean:", round(mean_sd_val$lower_ci, 2), "-", round(mean_sd_val$upper_ci, 2), "\n")
+
+
+```
+
+```{r}
+#looks at the mean height based on genotype, day, treatment this will be added later to the full data to find CI, diff height compared to control
+
+boot_treatment<-boot_treatment%>%
+  group_by(genotype, treatment, day)
+
+
+sample_mean_sd_treatment <-boot_treatment%>%
+  summarise(treat_sample_height = mean(boot_mean_height),
+            treat_sd = mean(boot_sd_height))
+
+
+head(sample_mean_sd_treatment)
+
+# Calculate the 95% confidence interval for the mean
+n <- length(boot_treatment)
+
+mean_sd_treatment <- sample_mean_sd_treatment %>%
+  mutate(treat_se = treat_sd/ sqrt(n))
+
+z <- qnorm(0.975) # 2-sided z-value for 95% CI
+
+sample_mean_sd_treatment <- mean_sd_treatment%>%
+  mutate(lower_ci = treat_sample_height - z * treat_se)
+            
+sample_mean_sd_treatment <- mean_sd_treatment%>%
+  mutate(upper_ci = treat_sample_height + z * treat_se)
+
+#filter day 13
+sample_mean_sd_treatment_13 <- sample_mean_sd_treatment%>%
+  filter(day == 13)
+
+```
+
+```{r}
+#separate full treatment data on day 13 
+
+
+boot_treatment_13_heat <- boot_treatment%>%
+  filter(day == 13)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_13_drought <- boot_treatment%>%
+  filter(day == 13)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_13_heatdrought <- boot_treatment%>%
+  filter(day == 13)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 13 control samples 
+boot_control_13 <- boot_control%>%
+  filter(day == 13)%>%
+  group_by(genotype)
+
+#separate full treatment data on day 12 
+
+
+boot_treatment_12_heat <- boot_treatment%>%
+  filter(day == 12)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_12_drought <- boot_treatment%>%
+  filter(day == 12)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_12_heatdrought <- boot_treatment%>%
+  filter(day == 12)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 12 control samples 
+boot_control_12 <- boot_control%>%
+  filter(day == 12)%>%
+  group_by(genotype)
+
+#separate full treatment data on day 11
+
+boot_treatment_11_heat <- boot_treatment%>%
+  filter(day == 11)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_11_drought <- boot_treatment%>%
+  filter(day == 11)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_11_heatdrought <- boot_treatment%>%
+  filter(day == 11)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 13 control samples 
+boot_control_11 <- boot_control%>%
+  filter(day == 11)%>%
+  group_by(genotype)
+
+#separate full treatment data on day 10 
+
+boot_treatment_10_heat <- boot_treatment%>%
+  filter(day == 10)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_10_drought <- boot_treatment%>%
+  filter(day == 10)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_10_heatdrought <- boot_treatment%>%
+  filter(day == 10)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 10 control samples 
+boot_control_10 <- boot_control%>%
+  filter(day == 10)%>%
+  group_by(genotype)
+
+#separate full treatment data on day 9
+
+boot_treatment_9_heat <- boot_treatment%>%
+  filter(day == 9)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_9_drought <- boot_treatment%>%
+  filter(day == 9)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_9_heatdrought <- boot_treatment%>%
+  filter(day == 9)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 9 control samples 
+boot_control_9 <- boot_control%>%
+  filter(day == 9)%>%
+  group_by(genotype)
+
+#separate full treatment data on day 8
+
+
+boot_treatment_8_heat <- boot_treatment%>%
+  filter(day == 8)%>%
+  filter(treatment == "heat")
+
+
+boot_treatment_8_drought <- boot_treatment%>%
+  filter(day == 8)%>%
+  filter(treatment == "drought")
+
+
+
+boot_treatment_8_heatdrought <- boot_treatment%>%
+  filter(day == 8)%>%
+  filter(treatment == "heatdrought")
+
+
+#Separate day 13 control samples 
+boot_control_8 <- boot_control%>%
+  filter(day == 8)%>%
+  group_by(genotype)
+
+```
+
+```{r}
+
+#find the mean height by genotype for heat samples
+mean_heat_13 <- boot_treatment_13_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_13 <- boot_treatment_13_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_13 <- boot_treatment_13_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat samples
+mean_heat_12 <- boot_treatment_12_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_12 <- boot_treatment_12_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_12 <- boot_treatment_12_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat samples
+mean_heat_11 <- boot_treatment_11_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_11 <- boot_treatment_11_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_11 <- boot_treatment_11_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat samples
+mean_heat_10 <- boot_treatment_10_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_10 <- boot_treatment_10_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_10 <- boot_treatment_10_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat samples
+mean_heat_9 <- boot_treatment_9_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_9 <- boot_treatment_9_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_9 <- boot_treatment_9_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat samples
+mean_heat_8 <- boot_treatment_8_heat%>%
+  group_by(genotype, day)%>%
+  summarise(heat_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for drought samples
+mean_drought_8 <- boot_treatment_8_drought%>%
+  group_by(genotype, day)%>%
+  summarise(drought_mean_height = mean(boot_mean_height))
+
+#find the mean height by genotype for heat-drought samples
+mean_heatdrought_8 <- boot_treatment_8_heatdrought%>%
+  group_by(genotype, day)%>%
+  summarise(heatdrought_mean_height = mean(boot_mean_height))
+
+#full data
+boot_treatment_13_heat
+boot_treatment_13_drought
+boot_treatment_13_heatdrought
+
+#has mean height of heat samples on day 13
+#mean_heat_13
+#mean_drought_13
+#mean_heatdrought_13
+
+#contains the control mean height with the confidence intervals
+#mean_sd_val_sum
+#mean_sd_val_sum_12
+#mean_sd_val_sum_11
+#mean_sd_val_sum_10
+```
+
+```{r}
+#difference between control and  heat sample mean
+diff_heat<- left_join(mean_sd_val_sum, mean_heat_13, by = c("genotype","day"))
+diff_heat <- diff_heat%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#diff_heat
+
+#difference between control and drought sample mean
+diff_drought<- left_join(mean_sd_val_sum, mean_drought_13, by = c("genotype","day"))
+diff_drought <- diff_drought%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#diff_drought
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought<- left_join(mean_sd_val_sum, mean_heatdrought_13, by = c("genotype","day"))
+diff_heatdrought <- diff_heatdrought%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+
+#diff_heatdrought
+
+#difference between control and  heat sample mean
+diff_heat_12<- left_join(mean_sd_val_sum_12, mean_heat_12, by = c("genotype","day"))
+diff_heat_12 <- diff_heat_12%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#difference between control and drought sample mean
+diff_drought_12<- left_join(mean_sd_val_sum_12, mean_drought_12, by = c("genotype","day"))
+diff_drought_12 <- diff_drought_12%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought_12<- left_join(mean_sd_val_sum_12, mean_heatdrought_12, by = c("genotype","day"))
+diff_heatdrought_12 <- diff_heatdrought_12%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+
+#difference between control and  heat sample mean
+diff_heat_11<- left_join(mean_sd_val_sum_11, mean_heat_11, by = c("genotype","day"))
+diff_heat_11 <- diff_heat_11%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#difference between control and drought sample mean
+diff_drought_11<- left_join(mean_sd_val_sum_11, mean_drought_11, by = c("genotype","day"))
+diff_drought_11 <- diff_drought_11%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought_11<- left_join(mean_sd_val_sum_11, mean_heatdrought_11, by = c("genotype","day"))
+diff_heatdrought_11 <- diff_heatdrought_11%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+
+#difference between control and  heat sample mean
+diff_heat_10<- left_join(mean_sd_val_sum_10, mean_heat_10, by = c("genotype","day"))
+diff_heat_10 <- diff_heat_10%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#difference between control and drought sample mean
+diff_drought_10<- left_join(mean_sd_val_sum_10, mean_drought_10, by = c("genotype","day"))
+diff_drought_10 <- diff_drought_10%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought_10<- left_join(mean_sd_val_sum_10, mean_heatdrought_10, by = c("genotype","day"))
+diff_heatdrought_10 <- diff_heatdrought_10%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+
+#difference between control and  heat sample mean
+diff_heat_9<- left_join(mean_sd_val_sum_9, mean_heat_9, by = c("genotype","day"))
+diff_heat_9 <- diff_heat_9%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#difference between control and drought sample mean
+diff_drought_9<- left_join(mean_sd_val_sum_9, mean_drought_9, by = c("genotype","day"))
+diff_drought_9 <- diff_drought_9%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought_9<- left_join(mean_sd_val_sum_9, mean_heatdrought_9, by = c("genotype","day"))
+diff_heatdrought_9 <- diff_heatdrought_9%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+
+#difference between control and  heat sample mean
+diff_heat_8<- left_join(mean_sd_val_sum_8, mean_heat_8, by = c("genotype","day"))
+diff_heat_8 <- diff_heat_8%>%
+  mutate(heat_diff_height = control_mean_height - heat_mean_height)
+
+#difference between control and drought sample mean
+diff_drought_8<- left_join(mean_sd_val_sum_8, mean_drought_8, by = c("genotype","day"))
+diff_drought_8 <- diff_drought_8%>%
+  mutate(drought_diff_height = control_mean_height - drought_mean_height)
+
+#difference between control and combination heat drought sample mean
+diff_heatdrought_8<- left_join(mean_sd_val_sum_8, mean_heatdrought_8, by = c("genotype","day"))
+diff_heatdrought_8 <- diff_heatdrought_8%>%
+  mutate(heatdrought_diff_height = control_mean_height - heatdrought_mean_height)
+```
+### Plots
+```{r}
+#day 13 plots 
+
+heat_his_13<-ggplot(boot_treatment_13_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_13, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_13<-ggplot(boot_treatment_13_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_13, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_13<-ggplot(boot_treatment_13_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_13, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heatdrought, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_13
+ggsave("day_13_histgram_heat.png",heat_his_13, height = 12, width = 20)
+drought_his_13
+ggsave("day_13_histgram_drought.png",drought_his_13, height = 12, width = 20)
+
+ggsave("All_stresses_d8.png",log_hd_c, height = 12, width = 20)
+
+heatdrought_13
+ggsave("day_13_histgram_heatdrought.png",heatdrought_13, height = 12, width = 20)
+ggsave("All_stresses_d8.png",log_hd_c, height = 12, width = 20)
+
+```
+
+```{r}
+#day 12 plots 
+
+heat_his_12<-ggplot(boot_treatment_12_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_12, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat_12, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_12<-ggplot(boot_treatment_12_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_12, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought_12, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_12<-ggplot(boot_treatment_12_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_12, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_12, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 1)+
+  geom_errorbar(data = diff_heatdrought_12, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_12
+drought_his_12
+heatdrought_12
+```
+
+```{r}
+#day 11 plots 
+
+heat_his_11<-ggplot(boot_treatment_11_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_11, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat_11, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_11<-ggplot(boot_treatment_11_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_11, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought_11, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_11<-ggplot(boot_treatment_11_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_11, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_11, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 1)+
+  geom_errorbar(data = diff_heatdrought_11, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_11
+drought_his_11
+heatdrought_11
+```
+
+```{r}
+#day 10 plots 
+
+heat_his_10 <-ggplot(boot_treatment_10_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_10, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat_10, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_10 <-ggplot(boot_treatment_10_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_10, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought_10, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_10 <-ggplot(boot_treatment_10_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_10, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_10, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 1)+
+  geom_errorbar(data = diff_heatdrought_10, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_10
+drought_his_10
+heatdrought_10
+```
+
+```{r}
+#day 9 plots 
+
+heat_his_9 <-ggplot(boot_treatment_9_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_9, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat_9, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_9 <-ggplot(boot_treatment_9_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_9, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought_9, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_9 <-ggplot(boot_treatment_9_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_9, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_9, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 1)+
+  geom_errorbar(data = diff_heatdrought_9, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_9
+drought_his_9
+heatdrought_9
+```
+
+```{r}
+#day 8 plots 
+
+heat_his_8 <-ggplot(boot_treatment_8_heat, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+  geom_histogram(data =  boot_control_8, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_heat_8, aes( x = control_mean_height - heat_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+
+drought_his_8 <-ggplot(boot_treatment_8_drought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_8, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2)+
+  geom_errorbar(data = diff_drought_8, aes( x = control_mean_height - drought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+
+heatdrought_8 <-ggplot(boot_treatment_8_heatdrought, aes(x = boot_mean_height)) +
+  geom_histogram(bins = 50, binwidth = 10, color = "green") + 
+   geom_histogram(data =  boot_control_8, aes(x = boot_mean_height), bins = 50, binwidth = 10, color ="blue") +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_lower_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =mean_upper_ci, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 2) +
+  geom_errorbar(data = mean_sd_val_sum_8, aes( x =control_mean_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "black", lty = 1)+
+  geom_errorbar(data = diff_heatdrought_8, aes( x = control_mean_height - heatdrought_diff_height, ymin = 0, ymax = 200),
+                width = 0.5, color = "red", lty = 1)+
+  labs(title = "Histogram with Confidence Intervals", x = "Phenotype Value", y = "Frequency")+
+  facet_wrap(vars(genotype))
+
+heat_his_8#heat_his_8
+drought_his_8
+heatdrought_8
+```
+***
+## Permutation Simulation {#permutation-simulation}
+***
+```{r}
+
+one.perm <- dplyr::select(corn_data_full,genotype,day,treatment, height)%>%
+  mutate(perm_treatment = sample(treatment,size = n(), replace = FALSE),
+         perm_day = sample(day,size = n()),
+         perm_height = sample(height, size = n()),
+         diff_height = height - perm_height)
+
+
+  one.perm 
+ perm.diff_heat <- one.perm %>%
+  group_by(genotype,day,treatment)%>%
+  filter(treatment != "drought",
+         treatment != "heatdrought")%>%
+  summarise(.group = "keep", perm_mean_height = mean(height))%>%
+  summarise(diff_height = diff(perm_mean_height),
+            treatment = treatment[-1])
+
+ #All changes in heat samples
+# perm.diff_heat
+ 
+ 
+ 
+#changes by day
+perm.diff_heat_6 <- perm.diff_heat%>%
+  filter(day == 6)
+
+perm.diff_heat_7 <- perm.diff_heat%>%
+  filter(day == 7)
+
+perm.diff_heat_8 <- perm.diff_heat%>%
+  filter(day == 8)
+
+perm.diff_heat_9 <- perm.diff_heat%>%
+  filter(day == 9)
+
+perm.diff_heat_10 <- perm.diff_heat%>%
+  filter(day == 10)
+
+perm.diff_heat_11 <- perm.diff_heat%>%
+  filter(day == 11)
+
+perm.diff_heat_12 <- perm.diff_heat%>%
+  filter(day == 12)
+
+perm.diff_heat_13 <- perm.diff_heat%>%
+  group_by(genotype)%>%
+  filter(day == 13)
+```
+
+```{r}
+#change in drought samples compared to control 
+perm.diff_drought <- one.perm %>%
+  group_by(genotype,day,treatment)%>%
+  filter(treatment != "heat",
+         treatment != "heatdrought")%>%
+  summarise(.group = "keep", perm_mean_height = mean(height))%>%
+  summarise(diff_height = diff(perm_mean_height),
+            treatment = treatment[-1])
+
+#changes in all drought samples
+#perm.diff_drought
+
+#changes by day
+perm.diff_drought_6 <- perm.diff_drought%>%
+  filter(day == 6)
+
+perm.diff_drought_7 <- perm.diff_drought%>%
+  filter(day == 7)
+
+perm.diff_drought_8 <- perm.diff_drought%>%
+  filter(day == 8)
+
+perm.diff_drought_9 <- perm.diff_drought%>%
+  filter(day == 9)
+
+perm.diff_drought_10 <- perm.diff_drought%>%
+  filter(day == 10)
+
+perm.diff_drought_11 <- perm.diff_drought%>%
+  filter(day == 11)
+
+perm.diff_drought_12 <- perm.diff_drought%>%
+  filter(day == 12)
+
+perm.diff_drought_13 <- perm.diff_drought%>%
+  group_by(genotype)%>%
+  filter(day == 13)
+```
+
+```{r}
+#Change in height in permuted samples
+perm.diff_heatdrought <- one.perm %>%
+  group_by(genotype,day,treatment)%>%
+  filter(treatment != "drought",
+         treatment != "heat")%>%
+  summarise(.group = "keep", perm_mean_height = mean(height))%>%
+  summarise(diff_height = diff(perm_mean_height),
+            treatment = treatment[-1])
+
+#All Changes
+#perm.diff_heatdrought
+
+#changes by day
+perm.diff_heatdrought_6 <- perm.diff_drought%>%
+  filter(day == 6)
+
+perm.diff_heatdrought_7 <- perm.diff_heatdrought%>%
+  filter(day == 7)
+
+perm.diff_heatdrought_8 <- perm.diff_heatdrought%>%
+  filter(day == 8)
+
+perm.diff_heatdrought_9 <- perm.diff_heatdrought%>%
+  filter(day == 9)
+
+perm.diff_heatdrought_10 <- perm.diff_heatdrought%>%
+  filter(day == 10)
+
+perm.diff_heatdrought_11 <- perm.diff_heatdrought%>%
+  filter(day == 11)
+
+perm.diff_heatdrought_12 <- perm.diff_heatdrought%>%
+  filter(day == 12)
+
+perm.diff_heatdrought_13 <- perm.diff_heatdrought%>%
+  group_by(genotype)%>%
+  filter(day == 13)
+
+all_perm.diff_diff <- rbind(perm.diff_heatdrought_13, perm.diff_drought_13, perm.diff_heat_13)
+
+all_perm.diff_summ <- all_perm.diff_diff%>%
+  group_by(genotype, treatment)%>%
+  summarise(.groups = "keep",mean_height_diff = mean(diff_height))
+
+wide_perm_diff <- all_perm.diff_summ %>%
+  pivot_wider(names_from = "treatment", values_from = "mean_height_diff")
+
+```
+
+```{r}
+
+perm_reps <- 1000
+
+corn_data_13 <- data_clean%>%
+  filter(day == 13)%>%
+  group_by(treatment,genotype, experiment,plot, )
+
+corn_data_full<- corn_data_full%>%
+ ungroup()
+ 
+
+
+many.perms <- replicate(n = perm_reps, simplify = FALSE,
+                        expr  = corn_data_full %>% 
+                          dplyr::select(genotype, day,treatment, height)     %>%
+                          dplyr::mutate(perm_treatment = sample(treatment, size = n(), replace = FALSE)) %>%
+                          group_by(genotype,day,perm_treatment) %>%
+                          summarise(.groups = "keep", mean_height = mean(height)))%>%
+                          # pivot_wider(names_from =perm_treatment, values_from = mean_height)%>%
+                          # mutate(diff_heat_height = heat - control) %>%
+                          # mutate(diff_drought_height = drought - control) %>%
+                          # mutate(diff_heatdrought_height = heatdrought - control)) %>%
+  
+  
+bind_rows()
+
+many.perms_day_13 <- replicate(n = perm_reps, simplify = FALSE,
+                        expr  = corn_data_13 %>% 
+                          dplyr::select(genotype,plot,experiment, day,treatment, height,width, convex_hull_area,solidity,perimeter, percent.necrosis, area, convex_hull_vertices, solidity,saturation_frequencies,value_frequencies,hue_circular_mean)     %>%
+                          dplyr::mutate(perm_treatment = sample(treatment, size = n(), replace = FALSE)) %>%
+                          group_by(genotype,plot,day,treatment,experiment,perm_treatment,height) %>%
+                          summarise(.groups = "keep", mean_height = mean(height),
+                                                      mean_width = mean(width),
+                                                      mean_convex_hull_area= mean(convex_hull_area),
+                                                      mean_convex_hull_vertices = mean(convex_hull_vertices),
+                                                      mean_area = mean(area),
+                                                      mean_perimeter = mean(perimeter),
+                                                      mean_percent_necrosis = mean(percent.necrosis),
+                                                      mean_solidity = mean(solidity),
+                                                      mean_saturation_frequencies = mean(saturation_frequencies),
+                                                      mean_value_frequencies = mean(value_frequencies),
+                                                      mean_hue_circular = mean(hue_circular_mean)))%>%
+                          # pivot_wider(names_from =perm_treatment, values_from = mean_height)%>%
+                          # mutate(diff_heat_height = heat - control) %>%
+                          # mutate(diff_drought_height = drought - control) %>%
+                          # mutate(diff_heatdrought_height = heatdrought - control)) %>%
+  
+  
+bind_rows()
+
+boot_control <- replicate(n = 1000, simplify = FALSE,
+                       expr = slice_sample(corn_data_13, prop =  1, replace = TRUE) %>%    # same code as above
+                         summarise(.groups = "keep", mean_height = mean(height),
+                                                      mean_width = mean(width),
+                                                      mean_convex_hull_area= mean(convex_hull_area),
+                                                      mean_convex_hull_vertices = mean(convex_hull_vertices),
+                                                      mean_area = mean(area),
+                                                      mean_perimeter = mean(perimeter),
+                                                      mean_percent_necrosis = mean(percent.necrosis),
+                                                      mean_solidity = mean(solidity),
+                                                      mean_saturation_frequencies = mean(saturation_frequencies),
+                                                      mean_value_frequencies = mean(value_frequencies),
+                                                      mean_hue_circular = mean(hue_circular_mean)))%>%           # calculate proportion with mean()
+  bind_rows()  
+                         
+many.perms_day_13 <- replicate(n = perm_reps, simplify = FALSE,
+                        expr = slice_sample(corn_data_13 , prop =  1, replace = TRUE)%>%
+                        dplyr::select(genotype,plot,experiment, day,treatment, height,width, convex_hull_area,solidity,perimeter, percent.necrosis, area, convex_hull_vertices, solidity,saturation_frequencies,value_frequencies,hue_circular_mean)     %>%
+                          dplyr::mutate(perm_treatment = sample(treatment, size = n(), replace = FALSE)) %>%
+                          group_by(genotype,plot,day,treatment,experiment,perm_treatment,height) %>%
+                          summarise(.groups = "keep", mean_height = mean(height),
+                                                      mean_width = mean(width),
+                                                      mean_convex_hull_area= mean(convex_hull_area),
+                                                      mean_convex_hull_vertices = mean(convex_hull_vertices),
+                                                      mean_area = mean(area),
+                                                      mean_perimeter = mean(perimeter),
+                                                      mean_percent_necrosis = mean(percent.necrosis),
+                                                      mean_solidity = mean(solidity),
+                                                      mean_saturation_frequencies = mean(saturation_frequencies),
+                                                      mean_value_frequencies = mean(value_frequencies),
+                                                      mean_hue_circular = mean(hue_circular_mean)))%>%
+                          # pivot_wider(names_from =perm_treatment, values_from = mean_height)%>%
+                          # mutate(diff_heat_height = heat - control) %>%
+                          # mutate(diff_drought_height = drought - control) %>%
+                          # mutate(diff_heatdrought_height = heatdrought - control)) %>%
+  
+  
+bind_rows()
+#head(many.perms)
+```
+
+```{r}
+perm_reps <- 1000
+
+corn_data_full<- corn_data_full%>%
+  ungroup()
+
+
+many.perms_wide <- replicate(n = perm_reps, simplify = FALSE,
+                        expr  = corn_data_full %>% 
+                          dplyr::select(genotype, day,treatment, height)     %>%
+                          dplyr::mutate(perm_treatment = sample(treatment, size = n(), replace = FALSE)) %>%
+                          group_by(genotype, day,perm_treatment) %>%
+                          summarise(.groups = 'keep', mean_height = mean(height))%>%
+                          pivot_wider(names_from =perm_treatment, values_from = mean_height)%>%
+                          mutate(diff_heat_height = heat - control) %>%
+                          mutate(diff_drought_height = drought - control) %>%
+                          mutate(diff_heatdrought_height = heatdrought - control)) %>%
+  
+  
+bind_rows()
+
+many.perms_13 <- many.perms_wide %>%
+  filter(day == 13)
+
+```
+
+```{r}
+#Compare the observed test statistic to the sampling distribution of this statistic from the null model.
+
+many.perm.diffs <- many.perms_13 %>% 
+  mutate(abs_obs_dif = control,
+         abs_perm_dif=  heat,
+         as_or_more_extreme = abs_perm_dif >= abs_obs_dif)
+#many.perm.diffs
+
+
+#ratio of treated plants > control
+many.perm.diffs <- many.perms_13 %>% 
+  mutate(abs_obs_dif = control,
+         abs_perm_heat=  heat,
+         as_or_more_extreme = abs_perm_heat >= abs_obs_dif)
+
+
+many.perm.diffs <- many.perms_13 %>% 
+  mutate(abs_obs_dif = control,
+         abs_perm_drought=  drought,
+         as_or_more_extreme = abs_perm_drought >= abs_obs_dif)
+#head(many.perm.diffs)
+
+many.perm.diffs <- many.perms_13 %>% 
+  mutate(abs_obs_dif = control,
+         abs_perm_heatdrought=  heatdrought,
+         as_or_more_extreme = abs_perm_heatdrought >= abs_obs_dif)
+#head(many.perm.diffs)
+```
+
+
+```{r}
+
+heat_perms <- many.perms%>%
+  filter(perm_treatment == "heat")
+
+#head(heat_perms)
+
+drought_perms <- many.perms%>%
+ filter(perm_treatment == "drought")
+
+heatdrought_perms <- many.perms%>%
+  filter(perm_treatment == "heatdrought")
+
+control_perms<- many.perms%>%
+  filter(perm_treatment == "control")
+
+
+
+many.perms_13 <- many.perms_wide %>%
+  filter(day == 13)
+
+diff_heat_perms <- many.perms_13 %>%
+   subset(select =c(genotype, diff_heat_height))
+
+diff_drought_perms <- many.perms_13 %>%
+   subset(select =c(genotype, diff_drought_height))
+
+diff_heatdrought_perms <- many.perms_13 %>%
+   subset(select =c(genotype, diff_heatdrought_height))
+
+mean_heat_diff <- diff_heat_perms%>%
+  group_by(genotype)%>%
+  na.omit()%>%
+  summarise(mean_diff_height = mean(diff_heat_height))
+
+mean_drought_diff <- diff_drought_perms%>%
+  group_by(genotype)%>%
+  na.omit()%>%
+  summarise(mean_diff_height = mean(diff_drought_height))
+
+mean_heatdrought_diff <- diff_heatdrought_perms%>%
+  group_by(genotype)%>%
+  na.omit()%>%
+  summarise(mean_diff_height = mean(diff_heatdrought_height))
+ 
+
+wide_perms_w_genotypes <- many.perms_13%>%
+  pivot_wider(names_from = "genotype", values_from = c(diff_heat_height, diff_drought_height,diff_heatdrought_height))
+
+#wide_perms_format <- wide_perms_w_genotypes%>%
+ # select(diff_heat_height_B73, ends_with(last_col()))
+ 
+
+
+
+control_perms_13<- control_perms%>%
+  group_by(genotype)%>%
+  filter(day == 13)
+
+
+ggplot(control_perms_13, aes(x = mean_height)) +
+  geom_histogram(bins = 100,binwidth = 5,color = "red")+
+  facet_wrap(vars(genotype))+
+  labs(title = "Permuted sampling distribution")#+
+  #geom_vline(xintercept = pull(perm_one_diff), color = "red", lty = 2)+
+  #annotate( x = pull(perm_one_diff), y = 1000, hjust = -.1, geom = "label", label = "observed", color = "red", alpha = .4)
+
+
+#many.perms_13
+#diff_heat_height
+ggplot(many.perms_13, aes(x = diff_heat_height)) +
+  geom_histogram(bins = 50, color = "blue")+
+  facet_wrap(vars(genotype))+
+  labs(title = "Permuted sampling distribution")+
+  geom_vline(xintercept = perm.diff_heat_13$diff_height , color = "red", lty = 2)+
+  annotate( x = mean(perm.diff_heat_13$diff_height),y =10, hjust = 1, geom = "label", label = "observed_heat", color = "red", alpha = .4)
+
+#perm.diff_heat_13
+ggplot(many.perms_13, aes(x = diff_drought_height)) +
+  geom_histogram(bins = 50, color = "blue")+
+  labs(title = "Permuted sampling distribution")+
+  geom_vline(xintercept = mean(perm.diff_drought_13$diff_height) , color = "red", lty = 2)+
+  annotate( x = mean(perm.diff_drought_13$diff_height),y =10, hjust = 1, geom = "label", label = "observed_drought", color = "red", alpha = .4) +facet_wrap(vars(genotype))
+
+ggplot(many.perms_13, aes(x = diff_heatdrought_height)) +
+  geom_histogram(bins = 50, color = "blue")+
+  labs(title = "Permuted sampling distribution")+
+  geom_vline(xintercept = abs(perm.diff_heatdrought_13$diff_height), color = "red", lty = 2)+
+  annotate( x = mean(perm.diff_heatdrought_13$diff_height),y =10, hjust = 1, geom = "label", label = "observed_drought", color = "red", alpha = .4)+facet_wrap(vars(genotype))
+
+#join_heat <- merge(many.perms_13, )
+
+#many.perms_13
+#perm.diff_heatdrought_13
+```
+
+## Basic Statistical Analysis {#basic-statistical-analysis}
+```{r}
+#Summary statistics is a number derived from a dataset that summarizes a property of the entire data set. This includes:
+# 1. Measuring of central tendency
+# 2. Measures of spread or dispersion
+# 3.) Measures of Correlation
+# Measure of the shape of the distribution.)
+
+
+# graphing only controls 
+corn_control_data <- corn_data_full%>%
+  filter( treatment == 'control')
+
+#graphing only heat treated plants
+corn_heat_data <- corn_data_full%>%
+  filter( treatment == 'heat')
+
+# graphing drought treated plants
+corn_drought_data <- corn_data_full%>%
+  filter( treatment == 'drought')
+
+corn_heatdrought_data <- corn_data_full%>%
+  filter( treatment == 'heatdrought')
+
+#Summarizing treated data
+corn_heat_data%>%
+  summarise(mean_height = mean(height),
+            median_height = median(height),
+            max_height = max(height),
+            min_height = min(height),
+            range_lenth = max_height - min_height,
+            length_q3    = quantile(height, probs = c(.75)),
+            length_q1    = quantile(height, probs = c(.25)),
+            length_iqr   = (length_q3 - length_q1))
+  
+
+corn_drought_data%>%
+  summarise(mean_height = mean(height),
+            median_height = median(height),
+            max_height = max(height),
+            min_height = min(height),
+            range_lenth = max_height - min_height,
+            length_q3    = quantile(height, probs = c(.75)),
+            length_q1    = quantile(height, probs = c(.25)),
+            length_iqr   = (length_q3 - length_q1))
+
+corn_heatdrought_data%>%
+  summarise(mean_height = mean(height),
+            median_height = median(height),
+            max_height = max(height),
+            min_height = min(height),
+            range_lenth = max_height - min_height,
+            length_q3    = quantile(height, probs = c(.75)),
+            length_q1    = quantile(height, probs = c(.25)),
+            length_iqr   = (length_q3 - length_q1))
+
+#Summarizing control data
+corn_control_data%>%
+  summarise(mean_height = mean(height),
+            median_height = median(height),
+            max_height = max(height),
+            min_height = min(height),
+            range_lenth = max_height - min_height,
+            length_q3    = quantile(height, probs = c(.75)),
+            length_q1    = quantile(height, probs = c(.25)),
+            length_iqr   = (length_q3 - length_q1))
+
+# Measuring the variance, standard deviation, and coefficient of variation
+corn_heat_data%>%
+  mutate(mean_height = mean(height),
+            squareddev_height = (height - mean_height)^2)%>%
+  summarise(n_h_data = n(),
+            SSx_height = sum(squareddev_height),
+            var_height = sum(squareddev_height)/(n_h_data - 1),
+            sd_height = sqrt(var_height),
+            coefvar_height = 100 * sd_height / unique(mean_height))%>%
+  round(digits = 2)
+
+corn_drought_data%>%
+  mutate(mean_height = mean(height),
+            squareddev_height = (height - mean_height)^2)%>%
+  summarise(n_d_data = n(),
+            SSx_height = sum(squareddev_height),
+            var_height = sum(squareddev_height)/(n_d_data - 1),
+            sd_height = sqrt(var_height),
+            coefvar_height = 100 * sd_height / unique(mean_height))%>%
+  round(digits = 2)
+
+corn_heatdrought_data%>%
+  mutate(mean_height = mean(height),
+            squareddev_height = (height - mean_height)^2)%>%
+  summarise(n_hd_data = n(),
+            SSx_height = sum(squareddev_height),
+            var_height = sum(squareddev_height)/(n_hd_data - 1),
+            sd_height = sqrt(var_height),
+            coefvar_height = 100 * sd_height / unique(mean_height))%>%
+  round(digits = 2)
+
+##Control plants
+corn_control_data%>%
+  mutate(mean_height = mean(height),
+         squareddev_height = (height - mean_height)^2)%>%
+  summarise(n_c_data = n(),
+            SSx_height = sum(squareddev_height),
+            var_height = sum(squareddev_height)/(n_c_data - 1),
+            sd_height = sqrt(var_height),
+            coefvar_height = 100 * sd_height / unique(mean_height))%>%
+  round(digits = 2)
+```
+
+
+## Post Processing {#post-processing}
+```{r,eval=TRUE}
+# In t-test
+#t.test(data = corn_data_full, height ~ width)
+
+#head(corn_data_full)
+# p-value = 0.0037
+
+#generate a linear model, ANOVA, and Tukey test
+
+data_clean_13 <- data_clean%>%
+  filter(day == 13)
+
+data_clean_oh33_13 <- data_clean_13%>%
+  filter(genotype == "OH33")
+
+corn_data_height.lm <- lm(data = data_clean_oh33_13, formula = height ~ treatment*plot+experiment)
+corn_data_height.lm
+summary(corn_data_height.lm)
+
+corn_data_width.lm <- lm(data = data_clean_oh33_13, formula = width ~ treatment*plot+experiment)
+corn_data_width.lm
+summary(corn_data_width.lm)
+
+corn_data_cha.lm <- lm(data = data_clean_oh33_13, formula = convex_hull_area ~ treatment*plot+experiment)
+corn_data_cha.lm
+summary(corn_data_cha.lm)
+
+corn_data_area.lm <- lm(data = data_clean_oh33_13, formula = area ~ treatment*plot+experiment)
+corn_data_area.lm
+summary(corn_data_area.lm)
+
+corn_data_percent.necrosis.lm <- lm(data = data_clean_oh33_13, formula = percent.necrosis ~ treatment*plot+experiment)
+corn_data_percent.necrosis.lm
+summary(corn_data_percent.necrosis.lm)
+
+corn_data_solidity.lm <- lm(data = data_clean_oh33_13, formula = solidity ~ treatment*plot+experiment)
+corn_data_solidity.lm
+summary(corn_data_solidity.lm)
+
+corn_data_perimeter.lm <- lm(data = data_clean_oh33_13, formula = perimeter ~ treatment*plot+experiment)
+corn_data_perimeter.lm
+summary(corn_data_perimeter.lm)
+
+corn_data_chv.lm <- lm(data = data_clean_oh33_13, formula = convex_hull_vertices ~ treatment*plot+experiment)
+corn_data_chv.lm
+summary(corn_data_chv.lm)
+
+corn_data_lp.lm <- lm(data = data_clean_oh33_13, formula = longest_path ~ treatment*plot+experiment)
+corn_data_lp.lm
+summary(corn_data_lp.lm)
+
+corn_data_hcm.lm <- lm(data = data_clean_oh33_13, formula = hue_circular_mean ~ treatment*plot+experiment)
+corn_data_hcm.lm
+summary(corn_data_hcm.lm)
+
+corn_data_vf.lm <- lm(data = data_clean_oh33_13, formula = value_frequencies ~ treatment*plot+experiment)
+corn_data_vf.lm
+summary(corn_data_vf.lm)
+
+corn_data_sf.lm <- lm(data = data_clean_oh33_13, formula = saturation_frequencies ~ treatment*plot+experiment)
+corn_data_sf.lm
+summary(corn_data_sf.lm)
+
+corn_data_ellipse_major_axis.lm <- lm(data = data_clean_oh33_13, formula = ellipse_major_axis ~ treatment*plot+experiment+plant)
+corn_data_ellipse_major_axis.lm
+summary(corn_data_ellipse_major_axis.lm)
+
+corn_data_ellipse_minor_axis.lm <- lm(data = data_clean_oh33_13, formula = ellipse_minor_axis ~ treatment*plot+experiment)
+corn_data_ellipse_minor_axis.lm
+summary(corn_data_ellipse_minor_axis.lm)
+
+corn_data_ea.lm <- lm(data = data_clean_oh33_13, formula = ellipse_angle ~ treatment*plot+experiment)
+corn_data_ea.lm
+summary(corn_data_ea.lm)
+
+corn_data_ee.lm <- lm(data = data_clean_oh33_13, formula = ellipse_eccentricity ~ treatment*plot+experiment)
+corn_data_ee.lm
+summary(corn_data_ee.lm)
+```
+
+
+```{r}
+corn_data.lm <- lm(data = data_clean_13, formula = area ~ treatment*plot+experiment)
+Anova(corn_data.lm, type = "II")
+Anova(corn_data.lm)
+a <- autoplot(corn_data.lm)
+# Create the autoplot object
+autoplot_obj <- autoplot(corn_data_area.lm, color = treatment)
+print(autoplot_obj)
+
+# Open a plotting device to save the plot
+jpeg("my_plot.jpeg", width = 1000, height = 800)
+
+# Plot the autoplot object
+print(autoplot_obj)
+
+# Close the plotting device to save the plot
+dev.off()
+
+
+
+#ggsave("autoplot.png", plot = a,  width = 10, height = 8, units = "in", dpi = 3000)
+
+aov <- aov(height ~ genotype * treatment+experiment, data_clean_13) %>% TukeyHSD()%>%
+ tidy()
+aov_filter <- aov %>%
+  filter(adj.p.value <= 0.05)
+
+#ggsave("autoplot.png",plot = autoplot, height = 7, width =15)
+
+#residuals <- residuals(corn_data.lm)
+#outlier_indices <- c(758, 777, 2065)
+#outlier_data <- residuals[outlier_indices, ]
+
+
+```
+```{r,eval=TRUE}
+# In t-test
+#t.test(data = corn_data_full, height ~ width)
+
+#head(corn_data_full)
+# p-value = 0.0037
+
+#generate a linear model, ANOVA, and Tukey test
+data_clean_ki11_13 <- data_clean%>%
+  filter(day == 13,
+         genotype == "Ki11")
+
+corn_data_height.lm <- lm(data = data_clean_ki11_13, formula = height ~ treatment*plot+experiment)
+corn_data_height.lm
+summary(corn_data_height.lm)
+
+corn_data_width.lm <- lm(data = data_clean_ki11_13, formula = width ~ treatment*plot+experiment)
+corn_data_width.lm
+summary(corn_data_width.lm)
+
+corn_data_cha.lm <- lm(data = data_clean_ki11_13, formula = convex_hull_area ~ treatment*plot+experiment)
+corn_data_cha.lm
+summary(corn_data_cha.lm)
+
+corn_data_area.lm <- lm(data = data_clean_ki11_13, formula = area ~ treatment*plot+experiment)
+corn_data_area.lm
+summary(corn_data_area.lm)
+
+corn_data_percent.necrosis.lm <- lm(data = data_clean_ki11_13, formula = percent.necrosis ~ treatment*plot+experiment)
+corn_data_percent.necrosis.lm
+summary(corn_data_percent.necrosis.lm)
+
+corn_data_solidity.lm <- lm(data = data_clean_ki11_13, formula = solidity ~ treatment*plot+experiment)
+corn_data_solidity.lm
+summary(corn_data_solidity.lm)
+
+corn_data_perimeter.lm <- lm(data = data_clean_ki11_13, formula = perimeter ~ treatment*plot+experiment)
+corn_data_perimeter.lm
+summary(corn_data_perimeter.lm)
+
+corn_data_chv.lm <- lm(data = data_clean_ki11_13, formula = convex_hull_vertices ~ treatment*plot+experiment)
+corn_data_chv.lm
+summary(corn_data_chv.lm)
+
+corn_data_lp.lm <- lm(data = data_clean_ki11_13, formula = longest_path ~ treatment*plot+experiment)
+corn_data_lp.lm
+summary(corn_data_lp.lm)
+
+corn_data_hcm.lm <- lm(data = data_clean_ki11_13, formula = hue_circular_mean ~ treatment*plot+experiment)
+corn_data_hcm.lm
+summary(corn_data_hcm.lm)
+
+corn_data_vf.lm <- lm(data = data_clean_ki11_13, formula = value_frequencies ~ treatment*plot+experiment)
+corn_data_vf.lm
+summary(corn_data_vf.lm)
+
+corn_data_sf.lm <- lm(data = data_clean_ki11_13, formula = saturation_frequencies ~ treatment*plot+experiment)
+corn_data_sf.lm
+summary(corn_data_sf.lm)
+
+corn_data_ellipse_major_axis.lm <- lm(data = data_clean_ki11_13, formula = ellipse_major_axis ~ treatment*plot+experiment)
+corn_data_ellipse_major_axis.lm
+summary(corn_data_ellipse_major_axis.lm)
+
+corn_data_ellipse_minor_axis.lm <- lm(data = data_clean_ki11_13, formula = ellipse_minor_axis ~ treatment*plot+experiment)
+corn_data_ellipse_minor_axis.lm
+summary(corn_data_ellipse_minor_axis.lm)
+
+corn_data_ea.lm <- lm(data = data_clean_ki11_13, formula = ellipse_angle ~ treatment*plot+experiment)
+corn_data_ea.lm
+summary(corn_data_ea.lm)
+
+corn_data_ee.lm <- lm(data = data_clean_ki11_13, formula = ellipse_eccentricity ~ treatment*plot+experiment)
+corn_data_ee.lm
+summary(corn_data_ee.lm)
+
+
+
+```
+
+```{r}
+data_clean_nc358_13 <- data_clean%>%
+  filter(day == 13,
+         genotype == "NC358")
+
+corn_data_height.lm <- lm(data = data_clean_nc358_13, formula = height ~ treatment*plot+experiment)
+corn_data_height.lm
+summary(corn_data_height.lm)
+
+corn_data_width.lm <- lm(data = data_clean_nc358_13, formula = width ~ treatment*plot+experiment)
+corn_data_width.lm
+summary(corn_data_width.lm)
+
+corn_data_cha.lm <- lm(data = data_clean_nc358_13, formula = convex_hull_area ~ treatment*plot+experiment)
+corn_data_cha.lm
+summary(corn_data_cha.lm)
+
+corn_data_area.lm <- lm(data = data_clean_nc358_13, formula = area ~ treatment*plot+experiment)
+corn_data_area.lm
+summary(corn_data_area.lm)
+
+corn_data_percent.necrosis.lm <- lm(data = data_clean_nc358_13, formula = percent.necrosis ~ treatment*plot+experiment)
+corn_data_percent.necrosis.lm
+summary(corn_data_percent.necrosis.lm)
+
+corn_data_solidity.lm <- lm(data = data_clean_nc358_13, formula = solidity ~ treatment*plot+experiment)
+corn_data_solidity.lm
+summary(corn_data_solidity.lm)
+
+corn_data_perimeter.lm <- lm(data = data_clean_nc358_13, formula = perimeter ~ treatment*plot+experiment)
+corn_data_perimeter.lm
+summary(corn_data_perimeter.lm)
+
+corn_data_chv.lm <- lm(data = data_clean_nc358_13, formula = convex_hull_vertices ~ treatment*plot+experiment)
+corn_data_chv.lm
+summary(corn_data_chv.lm)
+
+corn_data_lp.lm <- lm(data = data_clean_nc358_13, formula = longest_path ~ treatment*plot+experiment)
+corn_data_lp.lm
+summary(corn_data_lp.lm)
+
+corn_data_hcm.lm <- lm(data = data_clean_nc358_13, formula = hue_circular_mean ~ treatment*plot+experiment)
+corn_data_hcm.lm
+summary(corn_data_hcm.lm)
+
+corn_data_vf.lm <- lm(data = data_clean_nc358_13, formula = value_frequencies ~ treatment*plot+experiment)
+corn_data_vf.lm
+summary(corn_data_vf.lm)
+
+corn_data_sf.lm <- lm(data = data_clean_nc358_13, formula = saturation_frequencies ~ treatment*plot+experiment)
+corn_data_sf.lm
+summary(corn_data_sf.lm)
+
+corn_data_ellipse_major_axis.lm <- lm(data = data_clean_nc358_13, formula = ellipse_major_axis ~ treatment*plot+experiment)
+corn_data_ellipse_major_axis.lm
+summary(corn_data_ellipse_major_axis.lm)
+
+corn_data_ellipse_minor_axis.lm <- lm(data = data_clean_nc358_13, formula = ellipse_minor_axis ~ treatment*plot+experiment)
+corn_data_ellipse_minor_axis.lm
+summary(corn_data_ellipse_minor_axis.lm)
+
+corn_data_ea.lm <- lm(data = data_clean_nc358_13, formula = ellipse_angle ~ treatment*plot+experiment)
+corn_data_ea.lm
+summary(corn_data_ea.lm)
+
+corn_data_ee.lm <- lm(data = data_clean_nc358_13, formula = ellipse_eccentricity ~ treatment+plot+experiment)
+corn_data_ee.lm
+summary(corn_data_ee.lm)
+
+```
+```{r}
+data_clean_tx303_13 <- data_clean%>%
+  filter(day == 13,
+         genotype == "TX303")
+
+corn_data_height.lm <- lm(data = data_clean_tx303_13, formula = height ~ treatment*plot+experiment)
+corn_data_height.lm
+summary(corn_data_height.lm)
+
+corn_data_width.lm <- lm(data = data_clean_tx303_13, formula = width ~ treatment*plot+experiment)
+corn_data_width.lm
+summary(corn_data_width.lm)
+
+corn_data_cha.lm <- lm(data = data_clean_tx303_13, formula = convex_hull_area ~ treatment*plot+experiment)
+corn_data_cha.lm
+summary(corn_data_cha.lm)
+
+corn_data_area.lm <- lm(data = data_clean_tx303_13, formula = area ~ treatment*plot+experiment)
+corn_data_area.lm
+summary(corn_data_area.lm)
+
+corn_data_percent.necrosis.lm <- lm(data = data_clean_tx303_13, formula = percent.necrosis ~ treatment*plot+experiment)
+corn_data_percent.necrosis.lm
+summary(corn_data_percent.necrosis.lm)
+
+corn_data_solidity.lm <- lm(data = data_clean_tx303_13, formula = solidity ~ treatment*plot+experiment)
+corn_data_solidity.lm
+summary(corn_data_solidity.lm)
+
+corn_data_perimeter.lm <- lm(data = data_clean_tx303_13, formula = perimeter ~ treatment*plot+experiment)
+corn_data_perimeter.lm
+summary(corn_data_perimeter.lm)
+
+corn_data_chv.lm <- lm(data = data_clean_tx303_13, formula = convex_hull_vertices ~ treatment*plot+experiment)
+corn_data_chv.lm
+summary(corn_data_chv.lm)
+
+corn_data_lp.lm <- lm(data = data_clean_tx303_13, formula = longest_path ~ treatment*plot+experiment)
+corn_data_lp.lm
+summary(corn_data_lp.lm)
+
+corn_data_hcm.lm <- lm(data = data_clean_tx303_13, formula = hue_circular_mean ~ treatment*plot+experiment)
+corn_data_hcm.lm
+summary(corn_data_hcm.lm)
+
+corn_data_vf.lm <- lm(data = data_clean_tx303_13, formula = value_frequencies ~ treatment*plot+experiment)
+corn_data_vf.lm
+summary(corn_data_vf.lm)
+
+corn_data_sf.lm <- lm(data = data_clean_tx303_13, formula = saturation_frequencies ~ treatment*plot+experiment)
+corn_data_sf.lm
+summary(corn_data_sf.lm)
+
+corn_data_ellipse_major_axis.lm <- lm(data = data_clean_tx303_13, formula = ellipse_major_axis ~ treatment*plot+experiment)
+corn_data_ellipse_major_axis.lm
+summary(corn_data_ellipse_major_axis.lm)
+
+corn_data_ellipse_minor_axis.lm <- lm(data = data_clean_tx303_13, formula = ellipse_minor_axis ~ treatment*plot+experiment)
+corn_data_ellipse_minor_axis.lm
+summary(corn_data_ellipse_minor_axis.lm)
+
+corn_data_ea.lm <- lm(data = data_clean_tx303_13, formula = ellipse_angle ~ treatment*plot+experiment)
+corn_data_ea.lm
+summary(corn_data_ea.lm)
+
+corn_data_ee.lm <- lm(data = data_clean_tx303_13, formula = ellipse_eccentricity ~ treatment*plot+experiment)
+corn_data_ee.lm
+summary(corn_data_ee.lm)
+
+```
+
+
+```{r}
+#Dunnett' Comparisons
+
+#Dunnett's comparisons, also known as Dunnett's test or Dunnett's multiple comparison procedure, is a statistical method used for comparing multiple treatments to a single control group.
+
+#It is often used in experimental settings where multiple treatments are being tested against a single control group, and the researcher wants to determine if any of the treatments are significantly different from the control group.
+
+#Dunnett's test adjusts for the increased risk of making a Type I error (false positive) when comparing multiple treatments to a single control group by using a different critical value for each comparison. The critical value is based on the number of treatments being compared and the desired overall Type I error rate.
+
+#Overall, Dunnett's test is a useful tool for researchers who want to compare multiple treatments to a control group while minimizing the risk of making a false positive conclusion.
+
+# Load the multcomp package
+library(multcomp)
+library(DescTools)
+library(emmeans)
+
+
+# # Create a data frame with four treatments and one control group
+# data <- data.frame(
+#   Treatment1 = c(4, 6, 8, 10),
+#   Treatment2 = c(2, 4, 6, 8),
+#   Treatment3 = c(1, 2, 3, 4),
+#   Treatment4 = c(3, 5, 7, 9),
+#   Control = c(0, 0, 0, 0)
+# )
+# 
+# # Perform Dunnett's test using the control group as the reference group
+# dunnett_result <- dunnettTest(Control ~ Treatment1 + Treatment2 + Treatment3 + Treatment4, data=data)
+
+treatment <- c("Control", "Treatment1", "Treatment2", "Treatment3")
+values <- c(10, 12, 14, 16) # Replace these with your actual data
+group <- factor(rep(treatment, times = length(values)))
+
+# Create a data frame
+data <- data.frame(values, group)
+
+data
+#dunnett_result <- dunnettTest(control ~ heat + drought + heatdrought, data= many.perms_13)
+
+clean_data_B73
+many.perms.13<-many.perms%>%
+  filter(day == 13)%>%
+  group_by(genotype, perm_treatment)
+
+clean_data_12 <- data_clean%>%
+  filter(day == 12)
+
+clean_data_mo17<- clean_data_12%>%
+  filter(genotype == "Mo17")
+nrow(clean_data_mo17)
+
+clean_data_mo17
+anova_result <- aov(height ~ treatment, data = clean_data_mo17)
+anova_result
+
+dunnett_test <- DunnettTest(area ~ treatment, data=clean_data_mo17, control="control")
+
+dunnett_test
+unique(corn_data_13$treatment)
+# # Print the results
+# summary(dunnett_result)
+
+clean_data_B73<- clean_data_13%>%
+  group_by(treatment, genotype)%>%
+  filter(genotype == "B73")
+
+clean_data_mo17<- clean_data_13%>%
+  group_by(treatment, genotype)%>%
+  filter(genotype == "Mo17")
+clean_data_mo17
+```
+
+```{r}
+#For on genotype
+model <- lm(convex_hull_area ~ treatment+experiment , data =  data_clean_13)
+anova_result_emmeans <- emmeans(model, ~ treatment + experiment)
+
+summary(anova_result_emmeans)
+anova_result_emmeans
+
+#Estimated marginal means
+emmeans_result <- emmeans(anova_result_emmeans, specs =  pairwise ~ treatment, adjust = "tukey")
+emmeans_result
+
+emm_plot <- plot(emmeans(model, ~ treatment + experiment))
+emm_plot
+```
+```{r}
+#For all genotypes
+model <- lm(convex_hull_area ~ treatment + genotype + treatment:genotype , data = data_clean_13)
+anova_result_emmeans <- emmeans(model, ~ treatment + genotype + treatment:genotype)
+
+summary(anova_result_emmeans)
+anova_result_emmeans
+
+#Estimated marginal means
+#emmeans_result <- emmeans(anova_result_emmeans, specs =  pairwise ~ treatment, adjust = "tukey")
+anova_result_emmeans
+
+emmeans_result <- emmeans(anova_result_emmeans, specs =  pairwise ~ treatment | genotype , adjust = "tukey")
+
+
+emm_plot <- plot(emmeans(model, ~ treatment * genotype))
+emm_plot
+
+
+emmeans_df <- as.data.frame(emmeans(model, ~ treatment + genotype + treatment:genotype))
+
+ggplot(emmeans_df, aes(x = treatment, y = emmean, color = genotype)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.2, size = 1) +
+  labs(x = "Treatment", y = "Convex Hull Area", color = "Genotype") +
+  theme_classic() + facet_wrap(vars(genotype))
+
+```
+
+```{r}
+#Welch's ANOVA
+
+#Welch's ANOVA is a modified version of the standard one-way analysis of variance (ANOVA) test, which is used to test for differences in means between two or more groups. Welch's ANOVA is designed to handle situations where the variances among the groups are unequal, which violates the assumption of equal variances made by the standard ANOVA.
+
+#In Welch's ANOVA, the test statistic is calculated based on an estimate of the variance that takes into account the unequal variances among the groups. The degrees of freedom are also adjusted using a formula that depends on the sample sizes and variances of the groups being compared.
+
+#Welch's ANOVA is more robust to violations of the assumption of equal variances than the standard ANOVA, and can provide more accurate results when the variances among the groups are significantly different. However, it can have lower power than the standard ANOVA when the variances are roughly equal.
+
+bartlett.test(width ~ treatment, data = data_clean_13)
+
+welch_anova <- oneway.test(convex_hull_area ~ treatment, data = data_clean_13, var.equal = FALSE)
+welch_anova                        
+```
+
+```{r}
+#The Games-Howell test is a statistical method used for comparing multiple treatments to each other when the assumption of equal variances is violated. It is similar to the Tukey's test, but it does not assume equal variances among the treatment groups.
+
+#The Games-Howell test works by performing pairwise comparisons of the treatment groups using a modified version of the t-test. The standard error used in the t-test is adjusted to account for the unequal variances among the groups, and the degrees of freedom are also adjusted using a formula that takes into account the sample sizes and variances of the compared groups.
+
+#The Games-Howell test is considered a more conservative test than Tukey's test, meaning it is less likely to detect significant differences among the treatment groups. However, it is also considered more appropriate when the assumption of equal variances is violated, which is often the case in real-world applications.
+
+#In R, the games-howell.test() function in the userfriendlyscience package can be used to perform the Games-Howell test. It requires the input of a numeric vector or a data frame with columns representing the treatment groups. The function outputs a table with the pairwise comparisons between the treatment groups, along with the adjusted p-values and confidence intervals.
+
+
+#I can look at any physical trait now quickly determine significance
+library(agricolae)
+
+library(car)
+#leveneTest(anova_result_emmeans)
+
+# Fit an analysis of variance model by a call to lm
+anova_result_emmeans <- aov(area ~ treatment, data = data_clean_13)
+
+#both the levene and bartlett will check the variance of the variable of interest between groups to see if the Dunnett/Welch, or ANOVA Tukey are most appropriate for  our analysis. If the pvalue is > than our significant value use the ANOVA Tukey method.
+
+leveneTest(anova_result_emmeans)
+
+bartlett.test(area ~ treatment, data = data_clean_13)
+
+#welches anova. Unfortunately all the variances did not show extreme difference between tests so Tukey and ANOVA should continue to be used for the immediate future.
+welch_anova <- oneway.test(area ~ treatment, data = data_clean_13, var.equal = FALSE)
+welch_anova  
+
+#Post Hoc Pairwaise comparison of genotype and treatment. Not Specific enough, will use previous tukey test method instead
+emmeans_result <- emmeans(anova_result_emmeans, specs =  pairwise ~ treatment, adjust = "tukey")
+
+#games-Howell
+gh<- HSD.test(anova_result_emmeans, "treatment", group = FALSE)
+emmeans_result
+gh
+
+head(data_clean)
+```
+
+
+```{r}
+#Hsu's MCB to find the best treatment per genotype
+
+#Hsu's Multiple Comparisons with the Best (MCB) method is a statistical method used for comparing multiple treatments to a control group or to each other.
+
+#The MCB method is similar to the Dunnett's test, but instead of using the control group as the reference group for each comparison, it uses the best treatment group as the reference group. The "best" group is defined as the group with the largest sample mean or the highest ranking, depending on the research question.
+
+#The MCB method adjusts the critical values for each comparison based on the number of treatments being compared and the difference in means between the best group and the other groups. The method provides more power than the Bonferroni correction, which is a commonly used method for controlling the family-wise error rate, while still controlling the overall Type I error rate.
+
+#Hsu's MCB method is particularly useful when the researcher is interested in identifying the treatment group with the highest mean or rank, while controlling the overall Type I error rate. However, the method can be sensitive to the choice of the best group, and may not be appropriate when the best group is not well-defined or when the differences among the treatment groups are small.
+
+#In R, the hsu.mcb() function in the agricolae package can be used to perform Hsu's MCB method. The function requires the input of a numeric vector or a data frame with columns representing the treatment groups. The function outputs a table with the pairwise comparisons between the treatment groups, along with the adjusted p-values and confidence intervals.
+
+
+```
+
+
+
+```{r}
+sessionInfo()
+
+```

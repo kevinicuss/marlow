@@ -1,0 +1,451 @@
+---
+title: "correlation_graphs"
+author: "Kevin"
+date: "2024-11-12"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(hyperSpec)
+library(nnet)
+library(prospectr)
+library(mdatools)
+library(mvoutlier)
+library(purrr)
+library(tidyverse)
+library(lightr)
+library(plotly)
+library(cowplot)
+library(reshape2)
+library(stringr)
+library(lightr)
+library(caret) # for data preprocessing
+library(readr) # for data input/output
+library(RColorBrewer) # for color palettes
+library(factoextra)
+library(ggdendro)
+```
+
+```{r}
+corn_data_full <-read.delim("/Users/propst/Desktop/kp_maize_project_folders/hyperspec_csv/h8-h13_full.txt")
+head(corn_data_full)
+
+corn_data_full <- corn_data_full %>%
+  rename(Genotype = genotype, Treatment = treatment, Plot = plot, Plant = plant, Day = day)
+
+```
+
+
+```{r}
+# Housekeeping of data to make sure genotypes are consistently named and obvious outliers removed and Genotypes that were not used because of issues collecting data at the time
+
+# Remove unused genotypes or measurement that might be extreme
+corn_data_full <- corn_data_full%>%
+  filter(width < 2500,
+         height < 3000,
+         genotype != "PH207",
+         genotype != "KY21",
+         genotype != "B84")%>%
+    group_by(plot,genotype, treatment, experiment,day)
+
+
+#Change the name of genotypes so they are consisitent
+corn_data_full$treatment <- gsub('["9"]', 'heat', corn_data_full$treatment)
+corn_data_full$treatment <-  gsub('heat-drought', "heatdrought", corn_data_full$treatment)
+corn_data_full$genotype <- gsub('ki11', "Ki11", corn_data_full$genotype)
+corn_data_full$genotype <- gsub('OH43','oh43', corn_data_full$genotype)
+
+traits <- corn_data_full%>%
+  filter(day == 13)
+
+  
+```
+
+
+```{r}
+spectral_data <- read.csv("/Users/propst/clean_maize_hyperspec_data.csv")
+
+
+spectral_data<- spectral_data%>%
+  dplyr::select(-Reflectance)
+
+cleaned_data <- spectral_data %>%
+  select(Genotype, Treatment, Plot, Plant, Day, Wavelength, Normalized_Reflectance) %>%
+  filter(!is.na(Genotype), !is.na(Treatment), !is.na(Plot), !is.na(Plant), !is.na(Day))
+
+
+spectral_data <- cleaned_data
+
+
+head(hyperspec_long)
+
+# Replace "heat-drought" with "heatdrought" in the Treatment column
+corn_data_full <- corn_data_full %>%
+  mutate(Treatment = ifelse(Treatment == "heat-drought", "heatdrought", Treatment))
+
+
+# Merge the datasets by the common columns
+# Merge the hyperspectral data with morphological data
+hyperspec_morpho_merged_data <- cleaned_data %>%
+  left_join(corn_data_full, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+
+unique(hyperspec_morpho_merged_data$Treatment)
+```
+
+
+
+
+```{r}
+
+spectral_data<-spectral_data%>%
+  group_by(Genotype, Treatment, Plot, Plant, Day)
+
+# Define wavelength ranges
+nir_range <- c(700, 900)
+red_range <- c(600, 700)
+green_range <- c(500, 600)
+blue_range <- c(450, 500)
+
+# Specific wavelengths
+wave_800 <- 800
+wave_705 <- 705
+wave_700 <- 700
+wave_675 <- 675
+wave_550 <- 550
+wave_531 <- 531
+
+# Calculate mean reflectance for each wavelength of interest
+red_edge750_mean <- spectral_data %>%
+  filter(Wavelength == 750) %>%
+  summarise(mean_reflectance.red_edge750 = mean(Normalized_Reflectance), .groups = "drop")
+
+wavelength_550_mean <- spectral_data %>%
+  filter(Wavelength == 550) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.550 = mean(Normalized_Reflectance), .groups = "drop")
+
+wavelength_700_mean <- spectral_data %>%
+  filter(Wavelength == 700) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.700 = mean(Normalized_Reflectance), .groups = "drop")
+
+# Filter the data for each range and calculate the mean reflectance for each group
+nir_mean <- spectral_data %>%
+  filter(Wavelength >= nir_range[1] & Wavelength <= nir_range[2]) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.nir = mean(Normalized_Reflectance), .groups = "keep")
+
+red_mean <- spectral_data %>%
+  filter(Wavelength >= red_range[1] & Wavelength <= red_range[2]) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.red = mean(Normalized_Reflectance), .groups = "keep")
+
+green_mean <- spectral_data %>%
+  filter(Wavelength >= green_range[1] & Wavelength <= green_range[2]) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.green = mean(Normalized_Reflectance), .groups = "keep")
+
+blue_mean <- spectral_data %>%
+  filter(Wavelength >= blue_range[1] & Wavelength <= blue_range[2]) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.blue = mean(Normalized_Reflectance), .groups = "keep")
+
+# Calculate mean reflectance for each specific wavelength
+w800_mean <- spectral_data %>%
+  filter(Wavelength == wave_800) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.800 = mean(Normalized_Reflectance), .groups = "keep")
+
+w705_mean <- spectral_data %>%
+  filter(Wavelength == wave_705) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.705 = mean(Normalized_Reflectance), .groups = "keep")
+
+w700_mean <- spectral_data %>%
+  filter(Wavelength == wave_700) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.700 = mean(Normalized_Reflectance), .groups = "keep")
+
+w675_mean <- spectral_data %>%
+  filter(Wavelength == wave_675) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.675 = mean(Normalized_Reflectance), .groups = "keep")
+
+w550_mean <- spectral_data %>%
+  filter(Wavelength == wave_550) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.550 = mean(Normalized_Reflectance), .groups = "keep")
+
+w531_mean <- spectral_data %>%
+  filter(Wavelength == wave_531) %>%
+  #group_by(Genotype, Treatment, Day) %>%
+  summarise(mean_reflectance.531 = mean(Normalized_Reflectance), .groups = "keep")
+
+w900 <- spectral_data %>%
+  filter(Wavelength == 900)
+  #group_by(Genotype, Treatment, Day)
+  
+w970 <- spectral_data %>%
+  filter(Wavelength == 970)
+  #group_by(Genotype, Treatment, Day)
+
+w900_mean <- w900%>%
+  dplyr::summarise(.groups = "keep",mean_reflectance.900 = mean(Normalized_Reflectance))
+
+w970_mean <- w970%>%
+  dplyr::summarise(.groups = "keep",mean_reflectance.970 = mean(Normalized_Reflectance))
+
+
+# Merging all data frames into one
+merged_df <- ""
+merged_df <- nir_mean %>%
+  left_join(red_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(green_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(blue_mean, by = c("Genotype", "Treatment", "Plot", "Plant","Day")) %>%
+  left_join(w800_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(w705_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(w700_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(w675_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(w550_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day")) %>%
+  left_join(w531_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))%>%
+  left_join(red_edge750_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))%>%
+  left_join( w900_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))%>% 
+  left_join(w970_mean, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+
+
+# Now `merged_df` contains the mean reflectance values for each specified wavelength and range
+
+```
+
+The group of indices you’ve selected is well-rounded and valuable for pairing with morphological data, especially since they each provide unique insights into different aspects of plant physiology. Here’s why they work well together:
+
+1. **RECI**: Excellent choice for assessing chlorophyll concentration and detecting subtle changes in photosynthesis. This makes it useful for correlating with traits like leaf area and other indicators of plant health.
+  
+2. **NDVI & GNDVI**: Widely used for assessing overall vegetation health. NDVI gives a general health metric, while GNDVI can be particularly useful in assessing canopy greenness, a valuable trait when examining growth or stress.
+
+3. **MCARI (Modified Chlorophyll Absorption in Reflectance Index)**: Sensitive to chlorophyll content and the presence of non-photosynthetic matter, giving additional depth to your chlorophyll-related measurements like RECI.
+
+4. **PSRI (Plant Senescence Reflectance Index)**: Ideal for detecting leaf senescence and carotenoid content. Useful in tracking aging or stressed plants, which might correlate with developmental traits and stress responses.
+
+5. **SIPI (Structure Insensitive Pigment Index)**: Helps assess the ratio of carotenoids to chlorophyll, offering a measure of stress. This index is also less affected by structural variations, making it helpful in correlating directly with physiological traits.
+
+6. **PRI (Photochemical Reflectance Index)**: Good for detecting changes in light-use efficiency and can indicate photosynthetic performance under stress.
+
+7. **WI (Water Index)**: Directly correlates with water content in leaves, which is essential for understanding water stress and other morphological traits associated with water retention.
+
+This set offers a balanced combination of indices focused on chlorophyll content, leaf structure, photosynthetic efficiency, and water content. This diversity can provide a detailed picture when paired with morphological data, helping to identify correlations and better understand plant stress responses. Let me know if you want further exploration on any of these indices or additional analysis tips.
+
+```{r}
+#Why: RECI is particularly sensitive to chlorophyll content and is useful for detecting subtle changes in photosynthetic activity and leaf stress. For single leaves, it provides an accurate assessment of chlorophyll concentration, often used as an indicator of leaf health.
+#
+reci <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  summarise(RECI = (mean(mean_reflectance.red_edge750) - mean(mean_reflectance.705)) / 
+                    (mean(mean_reflectance.red_edge750) + mean(mean_reflectance.705)),
+            .groups = "keep")
+
+nir_red_mean <- merged_df%>%
+group_by(Genotype,Treatment, Day)
+
+
+ndvi <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  summarise(NDVI = (mean(mean_reflectance.nir) - mean(mean_reflectance.red)) / 
+                    (mean(mean_reflectance.nir) + mean(mean_reflectance.red)),
+            .groups = "keep")
+
+gndvi <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  summarise(GNDVI = (mean(mean_reflectance.nir) - mean(mean_reflectance.green)) / 
+                    (mean(mean_reflectance.nir) + mean(mean_reflectance.green)),
+            .groups = "keep")
+
+red_edge <- merged_df %>%
+  summarise(.groups = "keep", red_edge = (mean_reflectance.705 - mean_reflectance.675) / (mean_reflectance.705 + mean_reflectance.675))
+
+mcari <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  summarise(MCARI = ((mean_reflectance.700 - mean_reflectance.675) - 0.2 * (mean_reflectance.700 - mean_reflectance.550)) * 
+                     (mean_reflectance.700 / mean_reflectance.675),
+            .groups = "keep")
+
+sipi <- merged_df%>%
+  summarise(.groups = "keep", SIPI = (mean_reflectance.800 - mean_reflectance.675) * (mean_reflectance.800 + mean_reflectance.675))
+
+psri <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  summarise(PSRI = (mean_reflectance.red_edge750 - mean_reflectance.550) / mean_reflectance.700, .groups = "keep")
+
+pri <- merged_df%>%
+  summarise(.groups = "keep", PRI = (mean_reflectance.531 - mean_reflectance.700) / mean_reflectance.700)
+
+WI <- merged_df %>%
+  group_by(Genotype, Treatment, Plot, Plant, Day) %>%
+  dplyr::summarise(WI = mean_reflectance.900 / mean_reflectance.970, .groups = "keep")
+
+```
+
+```{r}
+indices<-""
+indices <- merge(ndvi, gndvi, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices, red_edge, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices, mcari, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices, sipi, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices, psri, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices, pri, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices,WI, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+indices <- merge(indices,reci, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+
+# Filter to exclude rows where Treatment is "control"
+indices_treat <- indices %>%
+  filter(Treatment != "control")
+
+indices_control <- indices %>%
+  filter(Treatment == "control")
+
+indices_heat <- indices %>%
+  filter(Treatment == "heat")
+
+indices_drought<- indices %>%
+  filter(Treatment == "drought")
+
+indices_hd <- indices %>%
+  filter(Treatment == "heatdrought")
+
+indices_morpho_merged_data <- indices %>%
+  left_join(corn_data_full, by = c("Genotype", "Treatment", "Plot", "Plant", "Day"))
+
+indices_morpho_merged_data%>%
+  dplyr::select(-hue_circular_std,-hue_median, -hue_frequencies, -center_of_mass, -ellipse_center, -bin_number, bin_values,-blue_frequencies,-green_frequencies,-red_frequencies, - lightness_frequencies, -green.magenta_frequencies, -blue.yellow_frequencies)%>%
+  na.omit()
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+library(corrplot)
+
+data_subset <- indices_morpho_merged_data %>%
+  select(NDVI, GNDVI, red_edge,SIPI,PSRI,PRI,WI,RECI, percent.necrosis, area, convex_hull_area, solidity, convex_hull_vertices, value_frequencies, hue_circular_mean )
+
+cor_matrix <- cor(data_subset, use = "complete.obs")
+
+
+# Visualize the correlation matrix using corrplot
+corrplot(cor_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black")
+```
+
+```{r}
+library(dplyr)
+library(corrplot)
+library(purrr)
+
+# Function to calculate and plot correlation matrix for each genotype and treatment group on Day 13
+plot_correlation_by_genotype_treatment <- function(data, genotype_name, treatment_name) {
+  # Select only the numeric columns
+  data_subset <- data %>%
+    select(NDVI, GNDVI, red_edge,SIPI,PSRI,PRI,WI,RECI, percent.necrosis, area, convex_hull_area, solidity, convex_hull_vertices, value_frequencies, hue_circular_mean )
+  
+  # Remove constant columns and columns with all NA values to avoid correlation calculation errors
+  non_constant_data <- data_subset %>%
+    select(where(~ sum(!is.na(.)) > 1)) %>%  # Columns with at least 2 non-NA values
+    select(where(~ length(unique(na.omit(.))) > 1))  # Columns with more than one unique non-NA value
+  
+  # Check if there are enough columns and rows left for correlation
+  if (ncol(non_constant_data) > 1 && nrow(non_constant_data) > 1) {  # At least 2 columns and 2 rows needed
+    # Calculate the correlation matrix
+    cor_matrix <- cor(non_constant_data, use = "complete.obs")
+    
+    # Plot the correlation matrix
+    corrplot(cor_matrix, method = "color", type = "upper", 
+             tl.col = "black", tl.srt = 45, addCoef.col = "black",
+             title = paste("Correlation Matrix for Genotype:", genotype_name, "and Treatment:", treatment_name, "on Day 12"))
+  } else {
+    message(paste("Not enough variable data to calculate correlation for Genotype:", genotype_name, "and Treatment:", treatment_name, "on Day 12"))
+  }
+}
+
+# Filter data for Day 13 only
+data_day13 <- indices_morpho_merged_data %>% filter(Day == 12)
+
+# Split data by Genotype and Treatment, and apply the function to each subset
+data_day13 %>%
+  group_by(Genotype, Treatment) %>%
+  group_split() %>%
+  walk(~ plot_correlation_by_genotype_treatment(.x, unique(.x$Genotype), unique(.x$Treatment)))
+
+```
+```{r}
+library(Hmisc)
+
+# Select only the numeric columns, excluding Treatment
+data_subset_numeric <- data_subset %>%
+  select(where(is.numeric))
+
+# Option 2: Impute missing values (e.g., with the mean)
+data_subset_clean <- data_subset_numeric %>%
+  mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+# Calculate correlations and p-values using rcorr()
+result <- rcorr(as.matrix(data_subset_numeric))
+
+# Extract correlation matrix and p-values matrix
+cor_matrix <- result$r
+p_value_matrix <- result$P
+
+# Print the correlation matrix and p-values
+print(cor_matrix)
+print(p_value_matrix)
+
+
+# Calculate correlations and p-values using the cleaned dataset
+result <- rcorr(as.matrix(data_subset_numeric))
+cor_matrix <- result$r
+p_value_matrix <- result$P
+
+
+# Visualize with corrplot, only showing significant correlations (e.g., p < 0.05)
+corrplot(cor_matrix, p.mat = p_value_matrix, sig.level = 0.05, insig = "blank", 
+         method = "color", type = "lower", tl.col = "black", tl.srt = 45,
+         addCoef.col = "black", title = "Correlation Matrix with Significant Values")
+
+```
+```{r}
+library(GGally)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+
+# Define a function to create a scatterplot matrix for a single genotype
+plot_genotype <- function(data, genotype_name) {
+  ggpairs(data,
+          columns = c("NDVI", "GNDVI", "red_edge","RECI", "area", "height", "solidity"),
+          title = paste("Scatterplot Matrix for Genotype:", genotype_name)) +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 10, face = "bold"),
+          axis.text = element_text(size = 7),
+          axis.title = element_text(size = 9))
+}
+
+# Split data by genotype and create scatterplot matrices for each genotype
+genotype_plots <- indices_morpho_merged_data %>%
+  split(.$Genotype) %>%
+  imap(~ plot_genotype(.x, .y))
+
+# Display or save the plots
+# For example, to display the plot for the first genotype:
+#genotype_plots[c(1,3:9)]
+#genotype_plots[]
+
+# Optionally, save each plot as an image
+output_directory <- "/Users/propst/Desktop/kp_barley_project_folders/"  # Specify your directory path
+walk2(genotype_plots, names(genotype_plots), ~ ggsave(filename = paste0(output_directory, "/", .y, "_scatterplot_matrix.png"), plot = .x, width = 8, height = 8))
+
+
+
+
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
